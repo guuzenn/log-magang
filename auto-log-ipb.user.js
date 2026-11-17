@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.1.0
+// @version      1.2.0
 // @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
@@ -17,6 +17,8 @@
  */
 (function () {
   "use strict";
+  // Kalau userscript dan extension Chrome sama-sama terpasang, cukup satu panel.
+  if (document.getElementById("alog-host")) return;
 
   const STORE = "autolog-ipb-v1";
   const BULAN = {
@@ -28,6 +30,8 @@
   };
   const BULAN_PORTAL = ["januari", "februari", "maret", "april", "mei", "juni", "juli",
     "agustus", "september", "oktober", "november", "desember"];
+  // Chrome/Edge bisa membuat folder langsung di komputer (showDirectoryPicker). Firefox belum, jadi di sana hanya ZIP.
+  const CAN_DIR = typeof window.showDirectoryPicker === "function";
 
   const tambahLink = [...document.querySelectorAll("a")].find((a) => /Tambah/.test(a.textContent));
   const tambahUrl = tambahLink && (tambahLink.getAttribute("onclick") || "").match(/OpenModal\('([^']+)'/)?.[1];
@@ -339,9 +343,12 @@
             <div class="chips" id="alog-hari">${["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]
               .map((h, i) => `<label class="chip"><input type="checkbox" value="${i}">${h}</label>`).join("")}</div></div>
           <div class="pill" id="alog-prep-info"></div>
-          <div class="field"><button class="btn soft block" id="alog-zip">${icon("download")} Unduh paket persiapan (.zip)</button></div>
-          <p class="note">${icon("info", 15)}<span>Isi ZIP: folder <code>bukti/</code> dengan subfolder tiap hari kerja (<code>bukti/2026-07-13/</code> dst.)
-            dan <code>template-log-magang.csv</code>. Klik kanan ZIP lalu <b>Extract All</b>. Buka template di Google Sheets/Excel dan isi keterangan tiap hari.</span></p>
+          <div class="field">${CAN_DIR ? `<button class="btn soft block" id="alog-prepdir">${icon("folder")} Buat folder persiapan</button>` : ""}
+            <button class="btn block" id="alog-zip"${CAN_DIR ? ' style="margin-top:8px"' : ""}>${icon("download")} ${CAN_DIR ? "Atau unduh sebagai .zip" : "Unduh paket persiapan (.zip)"}</button></div>
+          <p class="note">${icon("info", 15)}<span>Isinya: folder <code>bukti/</code> dengan subfolder tiap hari kerja (<code>bukti/2026-07-13/</code> dst.)
+            dan <code>template-log-magang.xlsx</code> (kolom Tanggal &amp; Kegiatan). ${CAN_DIR
+              ? "<b>Buat folder persiapan</b>: pilih <b>subfolder</b>, mis. buat folder baru <code>Magang</code> di dalam Documents. Chrome tidak mengizinkan memilih Documents/Desktop/Downloads langsung. Template yang sudah ada tidak ditimpa. Kalau gagal, otomatis ditawari unduh .zip."
+              : "Klik kanan ZIP lalu <b>Extract All</b>."} Buka template di Excel/Google Sheets dan isi kegiatan tiap hari.</span></p>
         `, "highlight")}
         ${card(1, "sliders", "Pengaturan default", "Dipakai untuk semua log. Tersimpan otomatis di browser ini.", `
           <div class="grid">
@@ -459,16 +466,54 @@
     el.innerHTML = n ? `${icon("calendar", 14)} ${n} hari kerja · ${cfg.tglMulai} s.d. ${cfg.tglSelesai}` : "Isi tanggal mulai & selesai magang";
   }
 
-  function templateCSV(days) {
-    const lines = days.map((iso) => {
-      const d = new Date(iso + "T00:00:00Z");
-      const bulan = BULAN_PORTAL[d.getUTCMonth()];
-      return `"${HARI_ID[d.getUTCDay()]}, ${d.getUTCDate()} ${bulan[0].toUpperCase() + bulan.slice(1)} ${d.getUTCFullYear()}",`;
-    });
-    return "﻿Tanggal,Keterangan\r\n" + lines.join("\r\n") + "\r\n";
+  function tanggalPanjang(iso) {
+    const d = new Date(iso + "T00:00:00Z");
+    const bulan = BULAN_PORTAL[d.getUTCMonth()];
+    return `${HARI_ID[d.getUTCDay()]}, ${d.getUTCDate()} ${bulan[0].toUpperCase() + bulan.slice(1)} ${d.getUTCFullYear()}`;
   }
 
-  // ZIP minimal tanpa kompresi (cukup untuk folder kosong + 1 file teks), tanpa library luar.
+  // Template .xlsx minimal (kolom Tanggal & Kegiatan), dirakit manual tanpa library luar.
+  // Tanggal disimpan sebagai teks supaya formatnya sama persis saat di-copy ke panel.
+  function templateXLSX(days) {
+    const NS = "http://schemas.openxmlformats.org/";
+    const xml = (body) => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + body;
+    const str = (ref, text, style) => `<c r="${ref}" t="inlineStr" s="${style}"><is><t>${text}</t></is></c>`;
+    const rows = [
+      `<row r="1">${str("A1", "Tanggal", 1)}${str("B1", "Kegiatan", 1)}</row>`,
+      ...days.map((iso, i) => `<row r="${i + 2}">${str("A" + (i + 2), tanggalPanjang(iso), 2)}<c r="B${i + 2}" s="2"/></row>`),
+    ];
+    return zipBytes([
+      { name: "[Content_Types].xml", data: xml(`<Types xmlns="${NS}package/2006/content-types">` +
+        `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+        `<Default Extension="xml" ContentType="application/xml"/>` +
+        `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+        `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
+        `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`) },
+      { name: "_rels/.rels", data: xml(`<Relationships xmlns="${NS}package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="${NS}officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`) },
+      { name: "xl/workbook.xml", data: xml(`<workbook xmlns="${NS}spreadsheetml/2006/main" xmlns:r="${NS}officeDocument/2006/relationships">` +
+        `<sheets><sheet name="Log Magang" sheetId="1" r:id="rId1"/></sheets></workbook>`) },
+      { name: "xl/_rels/workbook.xml.rels", data: xml(`<Relationships xmlns="${NS}package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="${NS}officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
+        `<Relationship Id="rId2" Type="${NS}officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
+      { name: "xl/styles.xml", data: xml(`<styleSheet xmlns="${NS}spreadsheetml/2006/main">` +
+        `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
+        `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
+        `<fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill></fills>` +
+        `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+        `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+        `<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+        `<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>` +
+        `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>` +
+        `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`) },
+      { name: "xl/worksheets/sheet1.xml", data: xml(`<worksheet xmlns="${NS}spreadsheetml/2006/main">` +
+        `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+        `<sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="28" customWidth="1"/><col min="2" max="2" width="80" customWidth="1"/></cols>` +
+        `<sheetData>${rows.join("")}</sheetData></worksheet>`) },
+    ]);
+  }
+
+  // ZIP minimal tanpa kompresi (folder kosong + beberapa file kecil), tanpa library luar.
   const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
     let c = n;
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -480,7 +525,7 @@
     return (c ^ 0xffffffff) >>> 0;
   }
 
-  function makeZip(entries) {
+  function zipBytes(entries) {
     const enc = new TextEncoder();
     const now = new Date();
     const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
@@ -489,8 +534,8 @@
     let offset = 0;
     for (const { name, data } of entries) {
       const nameBytes = enc.encode(name);
-      const body = data ? enc.encode(data) : new Uint8Array(0);
-      const crc = data ? crc32(body) : 0;
+      const body = data == null ? new Uint8Array(0) : typeof data === "string" ? enc.encode(data) : data;
+      const crc = body.length ? crc32(body) : 0;
       const isDir = name.endsWith("/");
       const local = new DataView(new ArrayBuffer(30));
       local.setUint32(0, 0x04034b50, true);
@@ -530,14 +575,18 @@
     end.setUint16(10, entries.length, true);
     end.setUint32(12, cdSize, true);
     end.setUint32(16, offset, true);
-    return new Blob([...parts, ...central, end], { type: "application/zip" });
+    const all = [...parts, ...central, end].map((p) => (p instanceof DataView ? new Uint8Array(p.buffer) : p));
+    const out = new Uint8Array(all.reduce((a, p) => a + p.length, 0));
+    let pos = 0;
+    for (const p of all) { out.set(p, pos); pos += p.length; }
+    return out;
   }
 
   function paketEntries(days) {
     return [
       { name: "bukti/" },
       ...days.map((d) => ({ name: `bukti/${d}/` })),
-      { name: "template-log-magang.csv", data: templateCSV(days) },
+      { name: "template-log-magang.xlsx", data: templateXLSX(days) },
     ];
   }
 
@@ -545,12 +594,56 @@
     const days = workdays();
     if (!days.length) return alert("Isi tanggal mulai & selesai magang dulu.");
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(makeZip(paketEntries(days)));
+    a.href = URL.createObjectURL(new Blob([zipBytes(paketEntries(days))], { type: "application/zip" }));
     a.download = `persiapan-log-magang-${cfg.tglMulai}.zip`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  async function buatFolder(btn) {
+    const days = workdays();
+    if (!days.length) return alert("Isi tanggal mulai & selesai magang dulu.");
+    // Gagal karena apa pun (izin ditolak, folder diblokir, antivirus, dll.) → tawarkan ZIP.
+    const fallback = (e) => {
+      console.warn("[Logmager] buat folder gagal:", e);
+      if (confirm(`Folder tidak bisa dibuat (${e.name}: ${e.message}).\n\nUnduh paket persiapan sebagai .zip saja?`)) unduhPaket();
+    };
+    let root;
+    try {
+      // Chrome menolak Documents/Desktop/Downloads itu sendiri, jadi user perlu pilih/buat subfolder.
+      root = await window.showDirectoryPicker({ id: "logmager", mode: "readwrite", startIn: "documents" });
+    } catch (e) {
+      // AbortError = jendela ditutup tanpa folder. Sering terjadi setelah Chrome menolak folder
+      // ("berisi file sistem") dan user menekan Batal, jadi tetap tawarkan ZIP.
+      if (e.name === "AbortError") {
+        if (confirm("Belum ada folder yang dipilih (atau foldernya ditolak browser).\n\nUnduh paket persiapan sebagai .zip saja?")) unduhPaket();
+      } else fallback(e);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      const name = `persiapan-log-magang-${cfg.tglMulai}`;
+      const base = await root.getDirectoryHandle(name, { create: true });
+      const bukti = await base.getDirectoryHandle("bukti", { create: true });
+      for (const d of days) await bukti.getDirectoryHandle(d, { create: true }); // folder yang sudah ada tidak diubah
+      let template = "dibuat";
+      try {
+        await base.getFileHandle("template-log-magang.xlsx");
+        template = "sudah ada, tidak ditimpa"; // jangan hapus kegiatan yang sudah ditulis
+      } catch (e) {
+        if (e.name !== "NotFoundError") throw e;
+        const w = await (await base.getFileHandle("template-log-magang.xlsx", { create: true })).createWritable();
+        await w.write(templateXLSX(days));
+        await w.close();
+      }
+      alert(`Selesai! Di folder "${root.name}/${name}":\n• bukti/ dengan ${days.length} subfolder tanggal\n• template-log-magang.xlsx (${template})`);
+    } catch (e) {
+      fallback(e);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function setFiles(list) {
@@ -642,6 +735,7 @@
 
   $("#alog-btn").onclick = () => panel.classList.toggle("open");
   $("#alog-zip").onclick = () => unduhPaket();
+  if (CAN_DIR) $("#alog-prepdir").onclick = (e) => buatFolder(e.currentTarget);
   $("#alog-x").onclick = () => panel.classList.remove("open");
   $("#alog-overlay").onclick = () => panel.classList.remove("open");
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") panel.classList.remove("open"); });

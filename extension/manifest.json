@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Logmager: Auto Logbook Magang IPB",
+  "short_name": "Logmager",
+  "version": "0.0.0",
+  "description": "Isi Log Aktivitas Kampus Merdeka di Student Portal IPB sekaligus dari spreadsheet. Tool tidak resmi, gratis & open-source.",
+  "homepage_url": "https://github.com/guuzenn/logmager",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

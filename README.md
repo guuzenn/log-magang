@@ -33,14 +33,20 @@ Ada dua cara pakai:
    Script akan otomatis ter-update setiap kali ada rilis baru.
 3. Buka Student Portal, lalu menu **Kemahasiswaan → Aktivitas → Log Aktivitas**. Tombol **⚡ Logmager** muncul di kanan bawah.
 4. Di panel yang terbuka:
-   0. **Persiapan (sekali di awal):** isi tanggal mulai, tanggal selesai, dan hari kerja, lalu klik
-      **📦 Unduh paket persiapan (.zip)**. Isi ZIP-nya:
+   0. **Persiapan (sekali di awal):** isi tanggal mulai, tanggal selesai, dan hari kerja. Logmager menyiapkan:
       - Folder `bukti/` dengan subfolder untuk setiap hari kerja (`bukti/2026-07-13/` dan seterusnya).
-      - `template-log-magang.csv`, berisi daftar tanggal yang tinggal diisi keterangannya di Google Sheets atau Excel.
+      - `template-log-magang.xlsx` dengan kolom *Tanggal* dan *Kegiatan*. Tanggalnya sudah terisi, tinggal tulis kegiatan tiap hari di Excel atau Google Sheets.
 
-      Klik kanan file ZIP, pilih **Extract All**, lalu taruh hasilnya di mana saja, misalnya Documents.
+      Ada dua cara:
+      - **📁 Buat folder persiapan** (Chrome/Edge): pilih sebuah **subfolder**, lalu klik **Allow** saat browser minta izin.
+        Chrome tidak mengizinkan memilih folder Documents, Desktop, atau Downloads itu sendiri ("berisi file sistem"),
+        jadi buat dulu folder baru di dalamnya lewat tombol **New folder** di jendela pilih folder, misalnya `Documents\Magang`.
+        Semuanya langsung dibuat di `persiapan-log-magang-<tanggal mulai>/`. Aman diklik ulang: foto bukti dan template yang sudah diisi tidak ditimpa.
+        Kalau tetap gagal, Logmager otomatis menawarkan unduh .zip.
+      - **Unduh sebagai .zip** (semua browser, termasuk Firefox): klik kanan file ZIP, pilih **Extract All**, lalu taruh hasilnya di mana saja.
+        Pastikan benar-benar di-extract. Folder di dalam ZIP yang belum di-extract tidak bisa dipilih di langkah 3.
    1. **Pengaturan default:** jam, jenis kegiatan, tipe, lokasi, dan dosen. Semuanya tersimpan otomatis di browser.
-   2. **Paste data:** blok kolom *Tanggal* dan *Keterangan* di Google Sheets/Excel, Ctrl+C, lalu Ctrl+V.
+   2. **Paste data:** blok kolom *Tanggal* dan *Kegiatan* di Excel/Google Sheets, Ctrl+C, lalu Ctrl+V.
       Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `11 Agustus 2026`.
    3. **Pilih bukti:** pilih folder `bukti/` yang berisi subfolder per tanggal, atau file yang namanya diawali tanggal.
    4. **🔍 Cek data**, lalu **🚀 Kirim**.
@@ -57,6 +63,16 @@ bukti/
 ```
 
 Tanggal yang sudah ada di portal otomatis dilewati, jadi aman dipakai berkali-kali sambil mencicil.
+
+### Versi extension Chrome
+Kodenya sama persis dengan userscript, hanya dibungkus jadi extension (Manifest V3). Untuk mencoba sebelum terbit di Chrome Web Store:
+```bash
+node tools/build-extension.mjs
+```
+Buka `chrome://extensions`, nyalakan **Developer mode**, klik **Load unpacked**, lalu pilih folder `dist/extension`.
+Untuk Chrome Web Store, upload `dist/logmager-extension-<versi>.zip`. Jangan pasang userscript dan extension bersamaan;
+kalau terlanjur, panelnya tetap hanya muncul satu.
+
 ---
 
 ## Opsi 2: Python CLI
@@ -71,7 +87,7 @@ Kalau tidak punya Chrome, jalankan juga `python -m playwright install chromium`.
 2. Jalankan `python main.py init`. Perintah ini membuat `log.csv` berisi semua hari kerja dan folder `bukti/YYYY-MM-DD/`.
 3. Isi kolom `keterangan` di `log.csv`. Kolom lain boleh dikosongkan supaya memakai default.
    **Sudah punya spreadsheet?** Lewati `log.csv`: isi `file_log: Logbook.xlsx` dan `sheet: NamaSheet` di `config.yaml`.
-   Script otomatis mencari kolom *Tanggal* dan *Keterangan/Aktivitas*.
+   Script otomatis mencari kolom *Tanggal* dan *Kegiatan/Keterangan/Aktivitas*.
    Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `Senin, 11 Agustus 2026`, termasuk template dari paket ZIP userscript.
 4. Jalankan `python main.py cek` untuk melihat entri mana yang sudah siap.
 5. Jalankan `python main.py run --dry-run`. Browser akan terbuka, lalu kamu login dan melihat form yang terisi tanpa disimpan.
@@ -81,4 +97,4 @@ Catatan: portal hanya mengizinkan satu sesi login aktif. Login di browser lain a
 
 ## Privasi
 `config.yaml`, `log.csv`, `bukti/`, dan `.browser-profile/` (session login) sudah masuk `.gitignore`.
-Pengaturan userscript tersimpan di `localStorage` browser kamu sendiri.
+Pengaturan userscript/extension tersimpan di `localStorage` browser kamu sendiri. Detailnya ada di [PRIVACY.md](PRIVACY.md).
