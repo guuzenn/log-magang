@@ -216,18 +216,26 @@ def fill_form(page, row, file_path):
     page.set_input_files("#main_form #File", str(file_path))
 
 
-def submit(page):
-    with page.expect_response(lambda r: r.request.method == "POST" and "/LogAktivitasKampusMerdeka/Tambah" in r.url,
-                              timeout=60_000) as resp_info:
-        page.click("#main_form input[type=submit]")
+def submit(page, tgl, url):
+    """Klik Simpan, lalu pastikan tanggalnya muncul di tabel portal (respon server tidak selalu JSON)."""
+    message = None
     try:
-        res = resp_info.value.json()
-    except Exception:
-        return False, f"respon bukan JSON (HTTP {resp_info.value.status})"
-    if res.get("status"):
-        page.wait_for_load_state("load")
-        return True, res.get("message") or "tersimpan"
-    return False, res.get("message") or "gagal tanpa pesan"
+        with page.expect_response(lambda r: r.request.method == "POST" and "/LogAktivitasKampusMerdeka/Tambah" in r.url,
+                                  timeout=60_000) as resp_info:
+            page.click("#main_form input[type=submit]")
+        try:
+            res = resp_info.value.json()
+            if not res.get("status"):
+                message = res.get("message") or "ditolak server tanpa pesan"
+        except Exception:
+            pass  # respon HTML: tentukan dari isi tabel
+    except Exception as e:
+        message = f"tidak ada respon server ({e.__class__.__name__})"
+    page.goto(url)
+    page.wait_for_selector("text=Tambah")
+    if tgl in existing_dates(page):
+        return True, "tersimpan"
+    return False, message or "tidak muncul di tabel portal setelah disimpan"
 
 
 def cmd_run(cfg, args):
@@ -279,11 +287,9 @@ def cmd_run(cfg, args):
                     input(f"  [dry-run] {tag} sudah diisi di browser. Cek, lalu tekan Enter (tidak disimpan)...")
                     page.goto(cfg["url_log"])
                     continue
-                success, msg = submit(page)
+                success, msg = submit(page, row["tanggal"], cfg["url_log"])
                 print(f"  [{'ok' if success else 'GAGAL'}] {tag}: {msg}")
                 ok += success
-                if not success:
-                    page.goto(cfg["url_log"])
             except Exception as e:
                 print(f"  [ERROR] {tag}: {e}")
                 page.goto(cfg["url_log"])
