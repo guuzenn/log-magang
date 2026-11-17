@@ -35,7 +35,7 @@ Ada dua cara pakai:
 4. Di panel yang terbuka:
    0. **Persiapan (sekali di awal):** isi tanggal mulai, tanggal selesai, dan hari kerja. Logmager menyiapkan:
       - Folder `bukti/` dengan subfolder untuk setiap hari kerja (`bukti/2026-07-13/` dan seterusnya).
-      - `template-log-magang.xlsx` dengan kolom *Tanggal* dan *Kegiatan*. Tanggalnya sudah terisi, tinggal tulis kegiatan tiap hari di Excel atau Google Sheets.
+      - `template-log-magang.xlsx` dengan kolom *Tanggal* (bertipe tanggal) dan *Kegiatan*. Tanggalnya sudah terisi, tinggal tulis kegiatan tiap hari di Excel atau Google Sheets.
 
       Ada dua cara:
       - **📁 Buat folder persiapan** (Chrome/Edge): pilih sebuah **subfolder**, lalu klik **Allow** saat browser minta izin.
@@ -47,7 +47,8 @@ Ada dua cara pakai:
         Pastikan benar-benar di-extract. Folder di dalam ZIP yang belum di-extract tidak bisa dipilih di langkah 3.
    1. **Pengaturan default:** jam, jenis kegiatan, tipe, lokasi, dan dosen. Semuanya tersimpan otomatis di browser.
    2. **Paste data:** blok kolom *Tanggal* dan *Kegiatan* di Excel/Google Sheets, Ctrl+C, lalu Ctrl+V.
-      Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `11 Agustus 2026`.
+      Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, `11 Agustus 2026`, dan format US `8/11/2026`
+      (terdeteksi otomatis kalau ada tanggal seperti `8/19/2026`). Baris yang tanggalnya tidak terbaca ditandai **Error**, tidak dilewati diam-diam.
    3. **Pilih bukti:** pilih folder `bukti/` yang berisi subfolder per tanggal, atau file yang namanya diawali tanggal.
    4. **🔍 Cek data**, lalu **🚀 Kirim**.
 
@@ -91,7 +92,7 @@ Kalau tidak punya Chrome, jalankan juga `python -m playwright install chromium`.
 3. Isi kolom `keterangan` di `log.csv`. Kolom lain boleh dikosongkan supaya memakai default.
    **Sudah punya spreadsheet?** Lewati `log.csv`: isi `file_log: Logbook.xlsx` dan `sheet: NamaSheet` di `config.yaml`.
    Script otomatis mencari kolom *Tanggal* dan *Kegiatan/Keterangan/Aktivitas*.
-   Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `Senin, 11 Agustus 2026`, termasuk template dari paket ZIP userscript.
+   Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `Senin, 11 Agustus 2026`, termasuk template dari paket ZIP userscript dan format US `8/19/2026` (terdeteksi otomatis).
 4. Jalankan `python main.py cek` untuk melihat entri mana yang sudah siap.
 5. Jalankan `python main.py run --dry-run`. Browser akan terbuka, lalu kamu login dan melihat form yang terisi tanpa disimpan.
 6. Jalankan `python main.py run`. Opsi tambahan: `--limit 5` dan `--tanggal 2026-07-14`.

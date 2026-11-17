@@ -51,9 +51,26 @@ BULAN_ALIAS = {
 OVERRIDE_COLS = ("jam_mulai", "jam_selesai", "jenis_kegiatan", "tipe", "lokasi")
 
 
-def parse_date(s):
+NUM_DATE = re.compile(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})")
+
+
+def numeric_order(values):
+    """8/7/2026 bisa 8 Juli (Indonesia) atau 7 Agustus (Excel format US). Kalau ada angka kedua > 12
+    (mis. 8/19/2026), seluruh data dibaca bulan/hari/tahun. Tanpa petunjuk: hari/bulan/tahun."""
+    dmy = mdy = False
+    for v in values:
+        if isinstance(v, (dt.date, dt.datetime)):
+            continue
+        if m := NUM_DATE.match(str(v).strip()):
+            x, y = int(m.group(1)), int(m.group(2))
+            dmy |= x > 12 and y <= 12  # hanya masuk akal sebagai hari/bulan
+            mdy |= y > 12 and x <= 12  # hanya masuk akal sebagai bulan/hari (typo seperti 31/31 diabaikan)
+    return "mdy" if mdy and not dmy else "dmy"
+
+
+def parse_date(s, order="dmy"):
     """Terima date/datetime (dari Excel), 2026-08-11, 11/08/2026, '11 Agustus 2026', 'Senin, 11 Agustus 2026',
-    'August 11, 2026'. Format angka selalu dibaca hari/bulan/tahun."""
+    'August 11, 2026'. Format angka dibaca hari/bulan/tahun, atau bulan/hari/tahun kalau order="mdy"."""
     if isinstance(s, dt.datetime):
         return s.date()
     if isinstance(s, dt.date):
@@ -61,8 +78,10 @@ def parse_date(s):
     t = str(s).strip().lower()
     if m := re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", t):
         y, mo, d = m.groups()
-    elif m := re.match(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", t):
+    elif m := NUM_DATE.match(t):
         d, mo, y = m.groups()
+        if order == "mdy":
+            d, mo = mo, d
     elif (m := re.search(r"(\d{1,2})[\s\-]+([a-z]+)[\s\-,]+(\d{4})", t)) and m.group(2) in BULAN_ALIAS:
         d, mo, y = m.group(1), BULAN_ALIAS[m.group(2)], m.group(3)
     elif (m := re.search(r"([a-z]+)\s+(\d{1,2}),?\s+(\d{4})", t)) and m.group(1) in BULAN_ALIAS:
@@ -130,11 +149,15 @@ def read_rows(cfg):
     source = _rows_xlsx(path, cfg.get("sheet")) if path.suffix.lower() in (".xlsx", ".xlsm") else _rows_csv(path)
     default = cfg.get("default", {})
     rows = []
+    source = list(source)
+    order = numeric_order(r.get("tanggal") for _, r in source if r.get("tanggal"))
+    if order == "mdy":
+        print(f"Catatan: tanggal angka di {path.name} dibaca sebagai bulan/hari/tahun (format US).")
     for i, r in source:
         if not r.get("tanggal"):
             continue
         try:
-            tgl = parse_date(r["tanggal"])
+            tgl = parse_date(r["tanggal"], order)
         except ValueError as e:
             if not r.get("keterangan"):
                 continue  # baris catatan/kosong di spreadsheet

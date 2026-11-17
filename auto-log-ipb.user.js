@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.2.0
+// @version      1.2.1
 // @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
@@ -50,11 +50,27 @@
     return `${y}-${pad(m)}-${pad(d)}`;
   }
 
-  function parseDate(raw) {
+  const NUM_DATE = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/;
+
+  // Tanggal angka seperti 8/7/2026 bisa berarti 8 Juli (Indonesia) atau 7 Agustus (Excel format US).
+  // Tentukan sekali untuk seluruh data: kalau ada angka kedua > 12 (mis. 8/19/2026), berarti bulan/hari/tahun.
+  function numericOrder(values) {
+    let dmy = false, mdy = false;
+    for (const v of values) {
+      const m = String(v).trim().match(NUM_DATE);
+      if (!m) continue;
+      const [x, y] = [+m[1], +m[2]];
+      if (x > 12 && y <= 12) dmy = true; // hanya masuk akal sebagai hari/bulan
+      if (y > 12 && x <= 12) mdy = true; // hanya masuk akal sebagai bulan/hari (typo seperti 31/31 diabaikan)
+    }
+    return mdy && !dmy ? "mdy" : "dmy"; // tanpa petunjuk: pakai format Indonesia
+  }
+
+  function parseDate(raw, order = "dmy") {
     const s = String(raw).trim().toLowerCase();
     let m;
     if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return iso(m[1], m[2], m[3]);
-    if ((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/))) return iso(m[3], m[2], m[1]); // DD/MM/YYYY
+    if ((m = s.match(NUM_DATE))) return order === "mdy" ? iso(m[3], m[1], m[2]) : iso(m[3], m[2], m[1]);
     if ((m = s.match(/(\d{1,2})[\s\-]+([a-z]+)[\s\-,]+(\d{4})/)) && BULAN[m[2]]) return iso(m[3], BULAN[m[2]], m[1]);
     if ((m = s.match(/([a-z]+)\s+(\d{1,2}),?\s+(\d{4})/)) && BULAN[m[1]]) return iso(m[3], BULAN[m[1]], m[2]);
     return null;
@@ -395,7 +411,7 @@
   </div>`;
 
   const panel = $("#alog");
-  const state = { files: [], ready: [], stop: false };
+  const state = { files: [], ready: [], stop: false, dateNote: "" };
   const defaults = { jamMulai: "08:00", jamSelesai: "17:00", jenis: "3", tipe: "true", lokasi: "", dosen: [], data: "",
     tglMulai: "", tglSelesai: "", hari: [1, 2, 3, 4, 5] };
   let cfg = Object.assign({}, defaults, JSON.parse(localStorage.getItem(STORE) || "{}"));
@@ -446,7 +462,6 @@
   }
 
   // ------------------------------------------------------------------ persiapan
-  const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 
   function workdays() {
     if (!cfg.tglMulai || !cfg.tglSelesai) return [];
@@ -466,21 +481,17 @@
     el.innerHTML = n ? `${icon("calendar", 14)} ${n} hari kerja · ${cfg.tglMulai} s.d. ${cfg.tglSelesai}` : "Isi tanggal mulai & selesai magang";
   }
 
-  function tanggalPanjang(iso) {
-    const d = new Date(iso + "T00:00:00Z");
-    const bulan = BULAN_PORTAL[d.getUTCMonth()];
-    return `${HARI_ID[d.getUTCDay()]}, ${d.getUTCDate()} ${bulan[0].toUpperCase() + bulan.slice(1)} ${d.getUTCFullYear()}`;
-  }
-
   // Template .xlsx minimal (kolom Tanggal & Kegiatan), dirakit manual tanpa library luar.
-  // Tanggal disimpan sebagai teks supaya formatnya sama persis saat di-copy ke panel.
+  // Tanggal disimpan sebagai tanggal asli Excel (bisa diurutkan/difilter/diketik ulang), dengan format tampilan
+  // Indonesia "Senin, 3 Agustus 2026" ([$-421]) yang ikut ter-copy apa adanya dan dikenali panel.
   function templateXLSX(days) {
     const NS = "http://schemas.openxmlformats.org/";
     const xml = (body) => '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + body;
     const str = (ref, text, style) => `<c r="${ref}" t="inlineStr" s="${style}"><is><t>${text}</t></is></c>`;
+    const serial = (iso) => (Date.parse(iso + "T00:00:00Z") - Date.UTC(1899, 11, 30)) / 86400000; // nomor tanggal Excel
     const rows = [
       `<row r="1">${str("A1", "Tanggal", 1)}${str("B1", "Kegiatan", 1)}</row>`,
-      ...days.map((iso, i) => `<row r="${i + 2}">${str("A" + (i + 2), tanggalPanjang(iso), 2)}<c r="B${i + 2}" s="2"/></row>`),
+      ...days.map((iso, i) => `<row r="${i + 2}"><c r="A${i + 2}" s="3"><v>${serial(iso)}</v></c><c r="B${i + 2}" s="2"/></row>`),
     ];
     return zipBytes([
       { name: "[Content_Types].xml", data: xml(`<Types xmlns="${NS}package/2006/content-types">` +
@@ -497,14 +508,16 @@
         `<Relationship Id="rId1" Type="${NS}officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
         `<Relationship Id="rId2" Type="${NS}officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`) },
       { name: "xl/styles.xml", data: xml(`<styleSheet xmlns="${NS}spreadsheetml/2006/main">` +
+        `<numFmts count="1"><numFmt numFmtId="164" formatCode="[$-421]dddd, d mmmm yyyy"/></numFmts>` +
         `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
         `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>` +
         `<fill><patternFill patternType="solid"><fgColor rgb="FFDBEAFE"/><bgColor indexed="64"/></patternFill></fill></fills>` +
         `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
         `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
-        `<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+        `<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
         `<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>` +
-        `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>` +
+        `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+        `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf></cellXfs>` +
         `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`) },
       { name: "xl/worksheets/sheet1.xml", data: xml(`<worksheet xmlns="${NS}spreadsheetml/2006/main">` +
         `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
@@ -662,10 +675,21 @@
       if (d) byDate.set(d, [...(byDate.get(d) || []), f]);
     }
     const entries = [], seen = new Set();
-    for (const row of parseTSV(cfg.data)) {
-      const date = parseDate(row[0] || "");
+    const rows = parseTSV(cfg.data);
+    const order = numericOrder(rows.map((r) => r[0] || ""));
+    state.dateNote = rows.some((r) => NUM_DATE.test(String(r[0] || "").trim()))
+      ? `Tanggal angka dibaca sebagai ${order === "mdy" ? "bulan/hari/tahun (format US)" : "hari/bulan/tahun"}.` : "";
+    for (const row of rows) {
+      const raw = String(row[0] || "").trim();
+      const date = parseDate(raw, order);
       const ket = cleanText(row[1] || "");
-      if (!date || !ket) continue;
+      if (!ket) continue; // baris kosong / tanpa kegiatan
+      if (!date) {
+        if (/^(tanggal|tgl|date)\b/i.test(raw)) continue; // baris judul
+        // Jangan dilewati diam-diam: tampilkan supaya user tahu ada baris yang tidak terbaca.
+        entries.push({ date: raw || "(kosong)", ket, status: "err", note: raw ? "tanggal tidak dikenali" : "tanggal kosong" });
+        continue;
+      }
       if (seen.has(date)) { entries.push({ date, ket, status: "err", note: "tanggal dobel di data" }); continue; }
       seen.add(date);
       entries.push({ date, ket, files: byDate.get(date) || [] });
@@ -680,9 +704,9 @@
       <div class="stats">
         <span class="stat ok">${n("ok")} siap dikirim</span><span class="stat skip">${n("skip")} sudah ada</span>
         <span class="stat warn">${n("warn")} bukti belum ada</span>${n("err") ? `<span class="stat err">${n("err")} error</span>` : ""}
-      </div>
+      </div>${state.dateNote ? `<p class="note">${icon("info", 15)}<span>${state.dateNote}</span></p>` : ""}
       <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Bukti</th><th>Status</th></tr></thead><tbody>${
-      entries.map((e) => `<tr><td style="white-space:nowrap">${e.date}</td><td>${esc(e.ket.slice(0, 90))}${e.ket.length > 90 ? "…" : ""}</td>
+      entries.map((e) => `<tr><td style="white-space:nowrap">${esc(e.date)}</td><td>${esc(e.ket.slice(0, 90))}${e.ket.length > 90 ? "…" : ""}</td>
         <td>${e.files ? e.files.length : "-"}</td><td><span class="badge ${e.status}">${e.status === "err" ? esc(e.note) : label[e.status]}</span></td></tr>`).join("")
     }</tbody></table></div>`;
   }
