@@ -17,6 +17,10 @@ default:
   lokasi: "Nama kantor, alamat"
   dosen: semua                              # "semua", atau daftar potongan nama: ["Nama Dosen"]
 
+# Sumber data: log.csv (dari `init`), atau langsung file spreadsheet Excel (.xlsx).
+# Untuk .xlsx isi juga `sheet`. Script mencari kolom berjudul Tanggal dan Keterangan/Aktivitas.
 file_log: log.csv
+# file_log: Logbook.xlsx
+# sheet: NamaSheet
 folder_bukti: bukti
-jeda_detik: 2
+jeda_detik: 1

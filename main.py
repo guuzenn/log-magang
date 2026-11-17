@@ -42,32 +42,104 @@ def load_config():
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+BULAN_ALIAS = {
+    **{b: i + 1 for i, b in enumerate(BULAN)},
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3, "apr": 4, "may": 5,
+    "jun": 6, "june": 6, "jul": 7, "july": 7, "agu": 8, "agt": 8, "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "okt": 10, "oct": 10, "october": 10, "nov": 11, "des": 12, "dec": 12, "december": 12,
+}
+OVERRIDE_COLS = ("jam_mulai", "jam_selesai", "jenis_kegiatan", "tipe", "lokasi")
+
+
 def parse_date(s):
-    s = str(s).strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
-        try:
-            return dt.datetime.strptime(s, fmt).date()
-        except ValueError:
-            pass
-    raise ValueError(f"Format tanggal tidak dikenali: {s!r} (pakai YYYY-MM-DD atau DD/MM/YYYY)")
+    """Terima date/datetime (dari Excel), 2026-08-11, 11/08/2026, '11 Agustus 2026', 'Senin, 11 Agustus 2026',
+    'August 11, 2026'. Format angka selalu dibaca hari/bulan/tahun."""
+    if isinstance(s, dt.datetime):
+        return s.date()
+    if isinstance(s, dt.date):
+        return s
+    t = str(s).strip().lower()
+    if m := re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", t):
+        y, mo, d = m.groups()
+    elif m := re.match(r"(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})", t):
+        d, mo, y = m.groups()
+    elif (m := re.search(r"(\d{1,2})[\s\-]+([a-z]+)[\s\-,]+(\d{4})", t)) and m.group(2) in BULAN_ALIAS:
+        d, mo, y = m.group(1), BULAN_ALIAS[m.group(2)], m.group(3)
+    elif (m := re.search(r"([a-z]+)\s+(\d{1,2}),?\s+(\d{4})", t)) and m.group(1) in BULAN_ALIAS:
+        mo, d, y = BULAN_ALIAS[m.group(1)], m.group(2), m.group(3)
+    else:
+        raise ValueError(f"Format tanggal tidak dikenali: {s!r}")
+    try:
+        return dt.date(int(y), int(mo), int(d))
+    except ValueError:
+        raise ValueError(f"Tanggal tidak valid: {s!r}") from None
+
+
+def cell_str(v):
+    if v is None:
+        return ""
+    if isinstance(v, dt.time):
+        return v.strftime("%H:%M")
+    return str(v).strip()
+
+
+def _rows_csv(path):
+    text = path.read_text(encoding="utf-8-sig")
+    first = text.splitlines()[0] if text else ""
+    delim = ";" if first.count(";") > first.count(",") else ","
+    for i, r in enumerate(csv.DictReader(io.StringIO(text, newline=""), delimiter=delim), start=2):
+        yield i, {(k or "").strip().lower(): (v or "").strip() for k, v in r.items()}
+
+
+def _rows_xlsx(path, sheet):
+    """Cari baris judul yang punya kolom 'Tanggal'; kolom keterangan = 'Keterangan'/'Aktivitas'/'Report'."""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    if sheet and sheet not in wb.sheetnames:
+        sys.exit(f"Sheet {sheet!r} tidak ada di {path.name}. Pilihan: {', '.join(wb.sheetnames)}")
+    ws = wb[sheet] if sheet else wb.active
+    rows = ws.iter_rows(values_only=True)
+    cols = None
+    for i, row in enumerate(rows, start=1):
+        if cols is None:
+            heads = [cell_str(c).lower() for c in row]
+            if not any(h.startswith("tanggal") for h in heads):
+                if i > 30:
+                    break
+                continue
+            cols = {}
+            for j, h in enumerate(heads):
+                key = h.replace(" ", "_")
+                if key in OVERRIDE_COLS:
+                    cols[j] = key
+                elif h.startswith("tanggal") and "tanggal" not in cols.values():
+                    cols[j] = "tanggal"
+                elif "keterangan" not in cols.values() and re.search(r"keterangan|aktivitas|report|kegiatan", h):
+                    cols[j] = "keterangan"
+            continue
+        r = {name: row[j] if j < len(row) else None for j, name in cols.items()}
+        yield i, {k: (v if k == "tanggal" else cell_str(v)) for k, v in r.items()}
+    if cols is None:
+        sys.exit(f"Tidak menemukan baris judul berisi kolom 'Tanggal' di sheet {ws.title!r}.")
 
 
 def read_rows(cfg):
     path = ROOT / cfg.get("file_log", "log.csv")
     if not path.exists():
         sys.exit(f"{path.name} belum ada. Jalankan: py main.py init")
-    text = path.read_text(encoding="utf-8-sig")
-    delim = ";" if text.splitlines()[0].count(";") > text.splitlines()[0].count(",") else ","
+    source = _rows_xlsx(path, cfg.get("sheet")) if path.suffix.lower() in (".xlsx", ".xlsm") else _rows_csv(path)
     default = cfg.get("default", {})
     rows = []
-    for i, r in enumerate(csv.DictReader(io.StringIO(text, newline=""), delimiter=delim), start=2):
-        r = {(k or "").strip().lower(): (v or "").strip() for k, v in r.items()}
+    for i, r in source:
         if not r.get("tanggal"):
             continue
         try:
             tgl = parse_date(r["tanggal"])
         except ValueError as e:
+            if not r.get("keterangan"):
+                continue  # baris catatan/kosong di spreadsheet
             sys.exit(f"{path.name} baris {i}: {e}")
+        r["keterangan"] = "\n".join(l.strip() for l in (r.get("keterangan") or "").splitlines() if l.strip())
         get = lambda k: r.get(k) or str(default.get(k, "") or "")
         rows.append({
             "tanggal": tgl,
@@ -137,7 +209,9 @@ def cmd_init(cfg, args):
     days = [d for d in days if d.weekday() in hari_kerja]
 
     log = ROOT / cfg.get("file_log", "log.csv")
-    if log.exists() and not args.force:
+    if log.suffix.lower() != ".csv":
+        print(f"file_log memakai {log.name}; log.csv tidak dibuat (data dibaca langsung dari spreadsheet).")
+    elif log.exists() and not args.force:
         print(f"{log.name} sudah ada, tidak ditimpa (pakai --force untuk menimpa).")
     else:
         with log.open("w", newline="", encoding="utf-8-sig") as f:
@@ -170,8 +244,11 @@ def cmd_cek(cfg, args):
 
 
 def existing_dates(page):
-    texts = page.eval_on_selector_all(
-        "table tbody tr td:nth-child(2)", "els => els.map(e => e.textContent)")
+    return dates_from_texts(page.eval_on_selector_all(
+        "table tbody tr td:nth-child(2)", "els => els.map(e => e.textContent)"))
+
+
+def dates_from_texts(texts):
     found = set()
     for t in texts:
         m = re.search(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", t)
@@ -182,9 +259,12 @@ def existing_dates(page):
 
 def wait_for_login(page, url):
     page.goto(url)
-    if "/Account/Login" in page.url or "LogAktivitasKampusMerdeka" not in page.url:
-        print(">> Silakan login di jendela browser yang terbuka. Script menunggu (maks 5 menit)...")
-        page.wait_for_url("**/LogAktivitasKampusMerdeka/Index/**", timeout=300_000)
+    if "LogAktivitasKampusMerdeka" not in page.url:
+        try:  # beri waktu kalau portal login otomatis (SSO masih aktif)
+            page.wait_for_url("**/LogAktivitasKampusMerdeka/Index/**", timeout=8_000)
+        except Exception:
+            print(">> Silakan login di jendela browser yang terbuka. Script menunggu (maks 5 menit)...")
+            page.wait_for_url("**/LogAktivitasKampusMerdeka/Index/**", timeout=300_000)
         if page.url.rstrip("/") != url.rstrip("/"):
             page.goto(url)
     page.wait_for_selector("text=Tambah")
@@ -216,26 +296,85 @@ def fill_form(page, row, file_path):
     page.set_input_files("#main_form #File", str(file_path))
 
 
-def submit(page, tgl, url):
-    """Klik Simpan, lalu pastikan tanggalnya muncul di tabel portal (respon server tidak selalu JSON)."""
-    message = None
+class SesiHabis(Exception):
+    pass
+
+
+# Dijalankan di dalam halaman portal yang sudah login: ambil form Tambah, isi, POST (seperti tombol Simpan),
+# lalu ambil ulang tabel log untuk memastikan tanggalnya benar-benar tersimpan.
+SUBMIT_JS = """
+async (a) => {
+  const get = async (u) => {
+    const r = await fetch(u, { credentials: 'same-origin' });
+    if (r.url.includes('/Account/Login')) throw new Error('SESI_HABIS');
+    return new DOMParser().parseFromString(await r.text(), 'text/html');
+  };
+  const doc = await get(a.tambahUrl);
+  const form = doc.querySelector('#main_form');
+  if (!form) throw new Error('form Tambah tidak ditemukan');
+  const set = { Waktu: a.waktu, Tmw: a.mulai, Tsw: a.selesai, JenisLogbookKegiatanKampusMerdekaId: a.jenis,
+                Lokasi: a.lokasi, Keterangan: a.ket };
+  const fd = new FormData();
+  for (const el of form.elements) {
+    if (!el.name || el.type === 'file' || el.type === 'submit') continue;
+    if (el.type === 'checkbox') {
+      const label = (el.closest('.form-check, div') || el.parentElement).textContent.toLowerCase();
+      if (a.dosen === null || a.dosen.some((n) => label.includes(n))) fd.append(el.name, el.value);
+      continue;
+    }
+    if (el.type === 'radio') {
+      if (el.name === 'IsLuring' && el.value === a.tipe) fd.append(el.name, el.value);
+      continue;
+    }
+    fd.append(el.name, el.name in set ? set[el.name] : el.value);
+  }
+  const bytes = Uint8Array.from(atob(a.file.b64), (c) => c.charCodeAt(0));
+  fd.append('File', new Blob([bytes], { type: a.file.type }), a.file.name);
+  const res = await fetch(form.getAttribute('action'), { method: 'POST', body: fd, credentials: 'same-origin',
+                                                          headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+  if (res.url.includes('/Account/Login')) throw new Error('SESI_HABIS');
+  let msg = null;
+  try {
+    const j = JSON.parse((await res.text()).replace(/^<textarea>|<\\/textarea>$/g, ''));
+    if (!j.status) msg = j.message || 'ditolak server';
+  } catch (_) { /* respon HTML: tentukan dari tabel */ }
+  const list = await get(a.listUrl);
+  return { msg, texts: [...list.querySelectorAll('table tbody tr td:nth-child(2)')].map((e) => e.textContent) };
+}
+"""
+MIME = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+def tambah_url(page):
+    onclick = page.get_attribute("a:has-text('Tambah')", "onclick") or ""
+    m = re.search(r"OpenModal\('([^']+)'", onclick)
+    if not m:
+        raise RuntimeError("tombol Tambah tidak ditemukan di halaman log")
+    return m.group(1)
+
+
+def submit_fast(page, row, file_path, list_url, add_url):
+    """Kirim 1 log tanpa membuka modal. Return (sukses, pesan)."""
+    import base64
+    dosen = row["dosen"]
     try:
-        with page.expect_response(lambda r: r.request.method == "POST" and "/LogAktivitasKampusMerdeka/Tambah" in r.url,
-                                  timeout=60_000) as resp_info:
-            page.click("#main_form input[type=submit]")
-        try:
-            res = resp_info.value.json()
-            if not res.get("status"):
-                message = res.get("message") or "ditolak server tanpa pesan"
-        except Exception:
-            pass  # respon HTML: tentukan dari isi tabel
+        res = page.evaluate(SUBMIT_JS, {
+            "tambahUrl": add_url, "listUrl": list_url,
+            "waktu": row["tanggal"].strftime("%d/%m/%Y"), "mulai": row["jam_mulai"], "selesai": row["jam_selesai"],
+            "jenis": JENIS[row["jenis_kegiatan"].lower()], "tipe": TIPE[row["tipe"]],
+            "lokasi": row["lokasi"], "ket": row["keterangan"],
+            "dosen": None if dosen == "semua" else [n.lower() for n in dosen],
+            "file": {"b64": base64.b64encode(Path(file_path).read_bytes()).decode(),
+                     "type": MIME.get(Path(file_path).suffix.lower(), "application/octet-stream"),
+                     "name": Path(file_path).name},
+        })
     except Exception as e:
-        message = f"tidak ada respon server ({e.__class__.__name__})"
-    page.goto(url)
-    page.wait_for_selector("text=Tambah")
-    if tgl in existing_dates(page):
+        if "SESI_HABIS" in str(e):
+            raise SesiHabis() from None
+        raise
+    if row["tanggal"] in dates_from_texts(res["texts"]):
         return True, "tersimpan"
-    return False, message or "tidak muncul di tabel portal setelah disimpan"
+    return False, res["msg"] or "tidak muncul di tabel portal setelah disimpan"
 
 
 def cmd_run(cfg, args):
@@ -277,23 +416,35 @@ def cmd_run(cfg, args):
             todo = todo[:max(1, args.limit or 1)]
         print(f"Akan {'MENCOBA (dry-run)' if args.dry_run else 'MENYIMPAN'} {len(todo)} entri.\n")
 
+        add_url = tambah_url(page)
         ok = 0
-        for row, bukti in todo:
+        for n, (row, bukti) in enumerate(todo, start=1):
             file_path = merge_images(bukti, row["tanggal"]) if isinstance(bukti, list) else bukti
-            tag = row["tanggal"].isoformat()
-            try:
-                fill_form(page, row, file_path)
-                if args.dry_run:
+            tag = f"[{n}/{len(todo)}] {row['tanggal'].isoformat()}"
+            if args.dry_run:
+                try:
+                    fill_form(page, row, file_path)
                     input(f"  [dry-run] {tag} sudah diisi di browser. Cek, lalu tekan Enter (tidak disimpan)...")
-                    page.goto(cfg["url_log"])
-                    continue
-                success, msg = submit(page, row["tanggal"], cfg["url_log"])
-                print(f"  [{'ok' if success else 'GAGAL'}] {tag}: {msg}")
-                ok += success
-            except Exception as e:
-                print(f"  [ERROR] {tag}: {e}")
+                except Exception as e:
+                    print(f"  [ERROR] {tag}: {e}")
                 page.goto(cfg["url_log"])
-            page.wait_for_timeout(int(cfg.get("jeda_detik", 2) * 1000))
+                continue
+            for attempt in (1, 2):
+                try:
+                    success, msg = submit_fast(page, row, file_path, cfg["url_log"], add_url)
+                    print(f"  {'ok   ' if success else 'GAGAL'} {tag}: {msg}")
+                    ok += success
+                except SesiHabis:
+                    if attempt == 1:
+                        print("  !! Sesi login terputus (login di browser/perangkat lain?). Login ulang di jendela script.")
+                        wait_for_login(page, cfg["url_log"])
+                        add_url = tambah_url(page)
+                        continue
+                    print(f"  GAGAL {tag}: sesi login terputus lagi")
+                except Exception as e:
+                    print(f"  ERROR {tag}: {e}")
+                break
+            page.wait_for_timeout(int(cfg.get("jeda_detik", 1) * 1000))
 
         if not args.dry_run:
             print(f"\nSelesai: {ok}/{len(todo)} tersimpan.")

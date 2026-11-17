@@ -5,3 +5,5 @@ bukti/
 .browser-profile/
 __pycache__/
 buktiprib/
+*.xlsx
+*.xlsm

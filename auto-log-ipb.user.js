@@ -1,14 +1,14 @@
 // ==UserScript==
-// @name         Auto Log Aktivitas Kampus Merdeka (IPB)
+// @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.0.0
-// @description  Isi banyak Log Aktivitas Kampus Merdeka sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
+// @version      1.1.0
+// @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
-// @homepageURL  https://github.com/guuzenn/log-magang
-// @supportURL   https://github.com/guuzenn/log-magang/issues
-// @updateURL    https://github.com/guuzenn/log-magang/releases/latest/download/auto-log-ipb.user.js
-// @downloadURL  https://github.com/guuzenn/log-magang/releases/latest/download/auto-log-ipb.user.js
+// @homepageURL  https://github.com/guuzenn/logmager
+// @supportURL   https://github.com/guuzenn/logmager/issues
+// @updateURL    https://github.com/guuzenn/logmager/releases/latest/download/auto-log-ipb.user.js
+// @downloadURL  https://github.com/guuzenn/logmager/releases/latest/download/auto-log-ipb.user.js
 // ==/UserScript==
 
 /*
@@ -34,7 +34,8 @@
   if (!tambahUrl) return;
 
   // ------------------------------------------------------------------ util
-  const $ = (sel, root = document) => root.querySelector(sel);
+  let UI = document; // diganti ke shadow root panel setelah UI dibuat
+  const $ = (sel, root = UI) => root.querySelector(sel);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const pad = (n) => String(n).padStart(2, "0");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -189,85 +190,207 @@
   }
 
   // ------------------------------------------------------------------ UI
+  // Panel dirender di Shadow DOM supaya CSS portal tidak bocor ke panel (dan sebaliknya).
+  const ICON = {
+    zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+    folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>',
+    image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>',
+    sheet: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8M10 9H8"/>',
+    paperclip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
+    check: '<path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/>',
+    info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  };
+  const icon = (name, size = 18) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+
   const css = `
-  #alog-btn{position:fixed;right:24px;bottom:24px;z-index:99999;background:#4f46e5;color:#fff;border:0;border-radius:999px;padding:12px 18px;font:600 14px Poppins,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer}
-  #alog{position:fixed;top:0;right:0;width:560px;max-width:100vw;height:100vh;z-index:99999;background:#fff;box-shadow:-8px 0 30px rgba(0,0,0,.2);font:14px Poppins,sans-serif;color:#1f2937;display:none;flex-direction:column}
-  #alog.open{display:flex}
-  #alog header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#4f46e5;color:#fff}
-  #alog header b{font-size:16px}
-  #alog header button{background:none;border:0;color:#fff;font-size:22px;cursor:pointer}
-  #alog main{overflow:auto;padding:14px 18px;flex:1}
-  #alog section{margin-bottom:16px}
-  #alog h4{margin:0 0 8px;font-size:14px;color:#312e81}
-  #alog label{display:block;font-size:12px;color:#4b5563;margin:6px 0 2px}
-  #alog input[type=text],#alog input[type=time],#alog select,#alog textarea{width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;padding:6px 8px;font:inherit}
-  #alog textarea{height:110px;font-size:12px}
-  #alog .row{display:flex;gap:8px}#alog .row>*{flex:1}
-  #alog .inline label{display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:13px;color:#1f2937}
-  #alog .btn{border:0;border-radius:6px;padding:8px 14px;font:600 13px inherit;cursor:pointer;background:#e5e7eb}
-  #alog .btn.primary{background:#4f46e5;color:#fff}#alog .btn:disabled{opacity:.5;cursor:default}
-  #alog .hint{font-size:12px;color:#6b7280;margin:4px 0}
-  #alog table{width:100%;border-collapse:collapse;font-size:12px}
-  #alog td,#alog th{border-bottom:1px solid #eee;padding:4px;text-align:left;vertical-align:top}
-  #alog .ok{color:#059669}#alog .warn{color:#b45309}#alog .skip{color:#6b7280}#alog .err{color:#dc2626}
-  #alog progress{width:100%}
-  #alog pre{background:#f9fafb;border:1px solid #eee;padding:8px;font-size:12px;max-height:160px;overflow:auto;white-space:pre-wrap}`;
-  document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
-  document.body.insertAdjacentHTML("beforeend", `
-  <button id="alog-btn">⚡ Auto Log</button>
-  <div id="alog">
-    <header><b>⚡ Auto Log Aktivitas</b><button id="alog-x" title="Tutup">×</button></header>
-    <main>
-      <section>
-        <h4>1. Pengaturan default</h4>
-        <div class="row">
-          <div><label>Jam mulai</label><input type="time" id="alog-mulai"></div>
-          <div><label>Jam selesai</label><input type="time" id="alog-selesai"></div>
-        </div>
-        <label>Jenis kegiatan</label><select id="alog-jenis"></select>
-        <label>Tipe penyelenggaraan</label>
-        <div class="inline" id="alog-tipe">
-          <label><input type="radio" name="alog-tipe" value=""> Hybrid</label>
-          <label><input type="radio" name="alog-tipe" value="true"> Offline</label>
-          <label><input type="radio" name="alog-tipe" value="false"> Online</label>
-        </div>
-        <label>Lokasi</label><input type="text" id="alog-lokasi" placeholder="Nama kantor, alamat">
-        <label>Dosen penggerak</label><div class="inline" id="alog-dosen"><span class="hint">memuat…</span></div>
-      </section>
-      <section>
-        <h4>2. Paste data dari spreadsheet</h4>
-        <p class="hint">Blok 2 kolom <b>Tanggal</b> dan <b>Keterangan</b> di Google Sheets/Excel, Ctrl+C, lalu Ctrl+V di sini. Baris judul &amp; baris tanpa keterangan otomatis dilewati.</p>
-        <textarea id="alog-data" placeholder="2026-08-11&#9;- Mengembangkan fitur registrasi…"></textarea>
-      </section>
-      <section>
-        <h4>3. Pilih bukti</h4>
-        <p class="hint">Folder berisi subfolder per tanggal (<code>bukti/2026-08-11/foto.jpg</code>) atau file bernama tanggal (<code>2026-08-11.jpg</code>). Beberapa foto di 1 tanggal otomatis digabung.</p>
-        <div class="row">
-          <button class="btn" id="alog-pickdir">📁 Pilih folder</button>
-          <button class="btn" id="alog-pickfiles">🖼️ Pilih file</button>
-        </div>
-        <input type="file" id="alog-dir" webkitdirectory multiple hidden>
-        <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg" hidden>
-        <p class="hint" id="alog-bukti-info">Belum ada bukti dipilih.</p>
-      </section>
-      <section>
-        <h4>4. Cek &amp; kirim</h4>
-        <div class="row">
-          <button class="btn" id="alog-cek">🔍 Cek data</button>
-          <button class="btn primary" id="alog-kirim" disabled>🚀 Kirim</button>
-          <button class="btn" id="alog-stop" disabled>⏹ Stop</button>
-        </div>
-        <progress id="alog-prog" value="0" max="1" hidden></progress>
-        <div id="alog-preview"></div>
-        <pre id="alog-log" hidden></pre>
-      </section>
-      <p class="hint">Tool tidak resmi. Isi log tetap tanggung jawabmu — tulis sesuai kegiatan asli.</p>
-    </main>
-  </div>`);
+  :host{all:initial}
+  *{box-sizing:border-box;margin:0;font-family:Poppins,Inter,"Segoe UI",system-ui,sans-serif}
+  [hidden]{display:none!important}
+  .root{
+    --primary:#1e3a8a;--primary-600:#172554;--primary-50:#eff6ff;--primary-100:#dbeafe;
+    --grad:linear-gradient(135deg,#0b2a5b,#1e40af);
+    --ink:#0f172a;--text:#334155;--muted:#64748b;--line:#e2e8f0;--bg:#f8fafc;--card:#fff;
+    --ok:#047857;--ok-bg:#ecfdf5;--warn:#b45309;--warn-bg:#fffbeb;--err:#be123c;--err-bg:#fff1f2;--skip-bg:#f1f5f9;
+    color:var(--text);font-size:14px;line-height:1.5}
+  .fab{position:fixed;right:24px;bottom:24px;z-index:2147483000;display:inline-flex;align-items:center;gap:8px;
+    padding:12px 20px;border:0;border-radius:999px;cursor:pointer;color:#fff;font-weight:600;font-size:14px;
+    background:var(--grad);box-shadow:0 10px 30px rgba(30,58,138,.4);transition:transform .15s}
+  .fab:hover{transform:translateY(-2px)}
+  .overlay{position:fixed;inset:0;z-index:2147483001;background:rgba(15,23,42,.35);opacity:0;pointer-events:none;transition:opacity .2s}
+  .panel{position:fixed;top:0;right:0;z-index:2147483002;width:min(720px,100vw);height:100vh;display:flex;flex-direction:column;
+    background:var(--bg);box-shadow:-20px 0 60px rgba(15,23,42,.25);transform:translateX(100%);transition:transform .25s ease}
+  .root.open .panel{transform:none}
+  .root.open .overlay{opacity:1;pointer-events:auto}
+  .hd{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;color:#fff;
+    background:var(--grad)}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,.18)}
+  .title{font-size:17px;font-weight:700}
+  .sub{font-size:12.5px;opacity:.85}
+  .icon-btn{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:10px;cursor:pointer;color:inherit;background:transparent}
+  .icon-btn:hover{background:rgba(255,255,255,.18)}
+  .body{flex:1;overflow:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+  .card.highlight{border-color:var(--primary-100);box-shadow:0 0 0 4px var(--primary-50)}
+  .card-hd{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+  .step{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--primary-50);color:var(--primary)}
+  .card-title{font-size:15px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:8px}
+  .card-desc{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--primary-50);color:var(--primary)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field+.field,.grid+.field,.field+.grid,.pill+.field{margin-top:14px}
+  .grid>.field{margin-top:0}
+  .label{font-size:12.5px;font-weight:600;color:var(--text)}
+  input[type=text],input[type=time],input[type=date],select,textarea{width:100%;height:42px;padding:0 12px;font-size:14px;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:10px;outline:none;transition:border-color .15s,box-shadow .15s}
+  textarea{height:140px;padding:10px 12px;resize:vertical;font-size:13px;line-height:1.5}
+  input:focus,select:focus,textarea:focus{border-color:var(--primary);box-shadow:0 0 0 4px var(--primary-50)}
+  .seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:#f1f5f9}
+  .seg label{flex:1;position:relative;text-align:center;padding:8px 0;border-radius:9px;cursor:pointer;font-weight:500;color:var(--muted);transition:all .15s}
+  .seg label:has(input:checked){background:#fff;color:var(--primary);box-shadow:0 1px 3px rgba(15,23,42,.12)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{position:relative;display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--line);border-radius:999px;
+    cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);background:#fff;transition:all .15s}
+  .chip:has(input:checked){border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
+  .seg input,.chip input{position:absolute;opacity:0;pointer-events:none}
+  .seg label:has(input:focus-visible),.chip:has(input:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+  .note{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--muted);margin-top:12px}
+  .note svg{flex:none;margin-top:2px}
+  code{font-family:ui-monospace,Consolas,monospace;font-size:12px;padding:1px 6px;border-radius:6px;background:#f1f5f9;color:var(--primary-600)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 18px;border-radius:10px;border:1px solid var(--line);
+    cursor:pointer;font-size:14px;font-weight:600;color:var(--ink);background:#fff;transition:all .15s}
+  .btn:hover:not(:disabled){border-color:#cbd5e1;background:#f8fafc}
+  .btn.primary{border:0;color:#fff;background:var(--primary)}
+  .btn.primary:hover:not(:disabled){background:var(--primary-600)}
+  .btn.soft{border:0;color:var(--primary-600);background:var(--primary-50)}
+  .btn.soft:hover:not(:disabled){background:var(--primary-100)}
+  .btn.danger{color:var(--err);border-color:#fecdd3}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.block{width:100%}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 12px;border:1.5px dashed #cbd5e1;border-radius:14px;
+    cursor:pointer;background:#fff;color:var(--text);transition:all .15s;font-size:13px}
+  .tile:hover{border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
+  .tile b{font-size:14px;color:var(--ink)}
+  .tile span{font-size:12px;color:var(--muted)}
+  .pill{display:inline-flex;align-items:center;gap:6px;margin-top:12px;padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:500;background:#f1f5f9;color:var(--muted)}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)}
+  .stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .stat{padding:6px 12px;border-radius:10px;font-size:12.5px;font-weight:600}
+  .stat.ok{background:var(--ok-bg);color:var(--ok)}.stat.skip{background:var(--skip-bg);color:var(--muted)}
+  .stat.warn{background:var(--warn-bg);color:var(--warn)}.stat.err{background:var(--err-bg);color:var(--err)}
+  .table-wrap{max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{position:sticky;top:0;background:#f8fafc;text-align:left;font-weight:600;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line)}
+  td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .badge{display:inline-block;white-space:nowrap;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:600}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.skip{background:var(--skip-bg);color:var(--muted)}
+  .badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.err{background:var(--err-bg);color:var(--err)}
+  .empty{padding:24px;text-align:center;color:var(--muted);font-size:13px;border:1.5px dashed var(--line);border-radius:12px}
+  .progress{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin-bottom:12px}
+  .progress div{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#1e3a8a,#3b82f6);transition:width .3s}
+  .log{max-height:180px;overflow:auto;padding:12px;border-radius:12px;background:#0f172a;color:#e2e8f0;
+    font:12px/1.6 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+  .ft{display:flex;gap:10px;padding:14px 24px;border-top:1px solid var(--line);background:#fff}
+  .ft .btn.primary{flex:1}
+  .disclaimer{font-size:11.5px;color:var(--muted);text-align:center;padding-bottom:4px}
+  @media (max-width:560px){.grid,.tiles{grid-template-columns:1fr}.body{padding:16px}.hd,.ft{padding-left:16px;padding-right:16px}}`;
+
+  const card = (n, ic, title, desc, body, extra = "") => `
+    <section class="card ${extra}">
+      <div class="card-hd"><div class="step">${icon(ic)}</div>
+        <div><div class="card-title">${n}. ${title}${extra === "highlight" ? ' <span class="tag">Sekali di awal</span>' : ""}</div>
+        <div class="card-desc">${desc}</div></div></div>
+      ${body}
+    </section>`;
+
+  const host = document.createElement("div");
+  host.id = "alog-host";
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
+  UI = shadow;
+  shadow.innerHTML = `<style>${css}</style>
+  <div class="root" id="alog">
+    <button class="fab" id="alog-btn">${icon("zap")} Logmager</button>
+    <div class="overlay" id="alog-overlay"></div>
+    <aside class="panel" role="dialog" aria-label="Logmager">
+      <header class="hd">
+        <div class="brand"><div class="logo">${icon("zap", 22)}</div>
+          <div><div class="title">Logmager</div><div class="sub">Isi logbook IPB sekaligus dari spreadsheet</div></div></div>
+        <button class="icon-btn" id="alog-x" title="Tutup">${icon("x", 20)}</button>
+      </header>
+      <main class="body">
+        ${card(0, "calendar", "Persiapan", "Buat folder bukti per hari & template spreadsheet untuk seluruh periode magang.", `
+          <div class="grid">
+            <label class="field"><span class="label">Tanggal mulai magang</span><input type="date" id="alog-tmulai"></label>
+            <label class="field"><span class="label">Tanggal selesai</span><input type="date" id="alog-tselesai"></label>
+          </div>
+          <div class="field"><span class="label">Hari kerja</span>
+            <div class="chips" id="alog-hari">${["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]
+              .map((h, i) => `<label class="chip"><input type="checkbox" value="${i}">${h}</label>`).join("")}</div></div>
+          <div class="pill" id="alog-prep-info"></div>
+          <div class="field"><button class="btn soft block" id="alog-zip">${icon("download")} Unduh paket persiapan (.zip)</button></div>
+          <p class="note">${icon("info", 15)}<span>Isi ZIP: folder <code>bukti/</code> dengan subfolder tiap hari kerja (<code>bukti/2026-07-13/</code> dst.)
+            dan <code>template-log-magang.csv</code>. Klik kanan ZIP lalu <b>Extract All</b>. Buka template di Google Sheets/Excel dan isi keterangan tiap hari.</span></p>
+        `, "highlight")}
+        ${card(1, "sliders", "Pengaturan default", "Dipakai untuk semua log. Tersimpan otomatis di browser ini.", `
+          <div class="grid">
+            <label class="field"><span class="label">Jam mulai</span><input type="time" id="alog-mulai"></label>
+            <label class="field"><span class="label">Jam selesai</span><input type="time" id="alog-selesai"></label>
+          </div>
+          <label class="field"><span class="label">Jenis kegiatan</span><select id="alog-jenis"></select></label>
+          <div class="field"><span class="label">Tipe penyelenggaraan</span>
+            <div class="seg" id="alog-tipe">
+              <label><input type="radio" name="alog-tipe" value="">Hybrid</label>
+              <label><input type="radio" name="alog-tipe" value="true">Offline</label>
+              <label><input type="radio" name="alog-tipe" value="false">Online</label>
+            </div></div>
+          <label class="field"><span class="label">Lokasi</span><input type="text" id="alog-lokasi" placeholder="Nama kantor, alamat lengkap"></label>
+          <div class="field"><span class="label">Dosen penggerak</span><div class="chips" id="alog-dosen"><span class="card-desc">Memuat…</span></div></div>
+        `)}
+        ${card(2, "sheet", "Data dari spreadsheet", "Blok kolom <b>Tanggal</b> &amp; <b>Keterangan</b> di Google Sheets/Excel, salin (Ctrl+C), lalu tempel di sini (Ctrl+V).", `
+          <textarea id="alog-data" placeholder="Senin, 13 Juli 2026&#9;- Onboarding dan setup environment&#10;Selasa, 14 Juli 2026&#9;- Mapping ERD ke Prisma schema"></textarea>
+          <p class="note">${icon("info", 15)}<span>Baris judul dan baris tanpa keterangan otomatis dilewati. Sel berisi beberapa baris tetap terbaca utuh.</span></p>
+        `)}
+        ${card(3, "paperclip", "Bukti aktivitas", "Pilih folder <code>bukti</code> (subfolder per tanggal) atau file yang namanya diawali tanggal.", `
+          <div class="tiles">
+            <button class="tile" id="alog-pickdir">${icon("folder", 26)}<b>Pilih folder</b><span>bukti/2026-08-11/foto.jpg</span></button>
+            <button class="tile" id="alog-pickfiles">${icon("image", 26)}<b>Pilih file</b><span>2026-08-11.jpg</span></button>
+          </div>
+          <input type="file" id="alog-dir" webkitdirectory multiple hidden>
+          <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg" hidden>
+          <div class="pill" id="alog-bukti-info">Belum ada bukti dipilih</div>
+          <p class="note">${icon("info", 15)}<span>Beberapa foto di satu tanggal otomatis digabung jadi 1 gambar. Format: JPG, PNG, atau 1 PDF.</span></p>
+        `)}
+        ${card(4, "check", "Cek &amp; kirim", "Periksa dulu sebelum dikirim. Tanggal yang sudah ada di portal otomatis dilewati.", `
+          <div id="alog-progress" class="progress" hidden><div id="alog-bar"></div></div>
+          <div id="alog-preview"><div class="empty">Klik <b>Cek data</b> untuk melihat log yang siap dikirim.</div></div>
+          <pre class="log" id="alog-log" hidden></pre>
+        `)}
+        <p class="disclaimer">Tool tidak resmi. Isi log tetap tanggung jawabmu, tulis sesuai kegiatan asli.</p>
+      </main>
+      <footer class="ft">
+        <button class="btn" id="alog-cek">${icon("search")} Cek data</button>
+        <button class="btn primary" id="alog-kirim" disabled>${icon("send")} <span id="alog-kirim-label">Kirim</span></button>
+        <button class="btn danger" id="alog-stop" hidden>${icon("stop")} Stop</button>
+      </footer>
+    </aside>
+  </div>`;
 
   const panel = $("#alog");
   const state = { files: [], ready: [], stop: false };
-  const defaults = { jamMulai: "08:00", jamSelesai: "17:00", jenis: "3", tipe: "true", lokasi: "", dosen: [], data: "" };
+  const defaults = { jamMulai: "08:00", jamSelesai: "17:00", jenis: "3", tipe: "true", lokasi: "", dosen: [], data: "",
+    tglMulai: "", tglSelesai: "", hari: [1, 2, 3, 4, 5] };
   let cfg = Object.assign({}, defaults, JSON.parse(localStorage.getItem(STORE) || "{}"));
   const save = () => localStorage.setItem(STORE, JSON.stringify(cfg));
 
@@ -276,6 +399,10 @@
     $("#alog-selesai").value = cfg.jamSelesai;
     $("#alog-lokasi").value = cfg.lokasi;
     $("#alog-data").value = cfg.data;
+    $("#alog-tmulai").value = cfg.tglMulai;
+    $("#alog-tselesai").value = cfg.tglSelesai;
+    panel.querySelectorAll("#alog-hari input").forEach((b) => { b.checked = cfg.hari.includes(+b.value); });
+    updatePrepInfo();
     const r = panel.querySelector(`input[name=alog-tipe][value="${cfg.tipe}"]`);
     if (r) r.checked = true;
     panel.addEventListener("input", () => {
@@ -283,6 +410,10 @@
       cfg.jamSelesai = $("#alog-selesai").value;
       cfg.lokasi = $("#alog-lokasi").value;
       cfg.data = $("#alog-data").value;
+      cfg.tglMulai = $("#alog-tmulai").value;
+      cfg.tglSelesai = $("#alog-tselesai").value;
+      cfg.hari = [...panel.querySelectorAll("#alog-hari input:checked")].map((b) => +b.value);
+      updatePrepInfo();
       cfg.jenis = $("#alog-jenis").value || cfg.jenis;
       cfg.tipe = panel.querySelector("input[name=alog-tipe]:checked")?.value ?? "true";
       const boxes = [...panel.querySelectorAll("#alog-dosen input")];
@@ -303,14 +434,131 @@
     $("#alog-dosen").innerHTML = dosen.map((n) => {
       const nama = n.split(" - ")[0];
       const on = cfg.dosen.length === 0 || cfg.dosen.includes(nama);
-      return `<label><input type="checkbox" value="${esc(nama)}" ${on ? "checked" : ""}> ${esc(n)}</label>`;
-    }).join("") || `<span class="hint">Tidak ada dosen di form.</span>`;
+      return `<label class="chip"><input type="checkbox" value="${esc(nama)}" ${on ? "checked" : ""}>${esc(n)}</label>`;
+    }).join("") || `<span class="card-desc">Tidak ada dosen di form.</span>`;
+  }
+
+  // ------------------------------------------------------------------ persiapan
+  const HARI_ID = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+
+  function workdays() {
+    if (!cfg.tglMulai || !cfg.tglSelesai) return [];
+    const out = [];
+    const end = Date.parse(cfg.tglSelesai + "T00:00:00Z");
+    for (let t = Date.parse(cfg.tglMulai + "T00:00:00Z"); t <= end && out.length < 400; t += 864e5) {
+      const d = new Date(t);
+      if (cfg.hari.includes(d.getUTCDay())) out.push(d.toISOString().slice(0, 10));
+    }
+    return out;
+  }
+
+  function updatePrepInfo() {
+    const n = workdays().length;
+    const el = $("#alog-prep-info");
+    el.className = "pill" + (n ? " ok" : "");
+    el.innerHTML = n ? `${icon("calendar", 14)} ${n} hari kerja · ${cfg.tglMulai} s.d. ${cfg.tglSelesai}` : "Isi tanggal mulai & selesai magang";
+  }
+
+  function templateCSV(days) {
+    const lines = days.map((iso) => {
+      const d = new Date(iso + "T00:00:00Z");
+      const bulan = BULAN_PORTAL[d.getUTCMonth()];
+      return `"${HARI_ID[d.getUTCDay()]}, ${d.getUTCDate()} ${bulan[0].toUpperCase() + bulan.slice(1)} ${d.getUTCFullYear()}",`;
+    });
+    return "﻿Tanggal,Keterangan\r\n" + lines.join("\r\n") + "\r\n";
+  }
+
+  // ZIP minimal tanpa kompresi (cukup untuk folder kosong + 1 file teks), tanpa library luar.
+  const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+
+  function makeZip(entries) {
+    const enc = new TextEncoder();
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const parts = [], central = [];
+    let offset = 0;
+    for (const { name, data } of entries) {
+      const nameBytes = enc.encode(name);
+      const body = data ? enc.encode(data) : new Uint8Array(0);
+      const crc = data ? crc32(body) : 0;
+      const isDir = name.endsWith("/");
+      const local = new DataView(new ArrayBuffer(30));
+      local.setUint32(0, 0x04034b50, true);
+      local.setUint16(4, 20, true);
+      local.setUint16(6, 0x0800, true); // nama file UTF-8
+      local.setUint16(8, 0, true);      // tanpa kompresi
+      local.setUint16(10, dosTime, true);
+      local.setUint16(12, dosDate, true);
+      local.setUint32(14, crc, true);
+      local.setUint32(18, body.length, true);
+      local.setUint32(22, body.length, true);
+      local.setUint16(26, nameBytes.length, true);
+      local.setUint16(28, 0, true);
+      parts.push(local, nameBytes, body);
+
+      const cd = new DataView(new ArrayBuffer(46));
+      cd.setUint32(0, 0x02014b50, true);
+      cd.setUint16(4, 20, true);
+      cd.setUint16(6, 20, true);
+      cd.setUint16(8, 0x0800, true);
+      cd.setUint16(10, 0, true);
+      cd.setUint16(12, dosTime, true);
+      cd.setUint16(14, dosDate, true);
+      cd.setUint32(16, crc, true);
+      cd.setUint32(20, body.length, true);
+      cd.setUint32(24, body.length, true);
+      cd.setUint16(28, nameBytes.length, true);
+      cd.setUint32(38, isDir ? 0x10 : 0x20, true); // atribut DOS: folder / file
+      cd.setUint32(42, offset, true);
+      central.push(cd, nameBytes);
+      offset += 30 + nameBytes.length + body.length;
+    }
+    const cdSize = central.reduce((a, p) => a + p.byteLength, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, entries.length, true);
+    end.setUint16(10, entries.length, true);
+    end.setUint32(12, cdSize, true);
+    end.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, end], { type: "application/zip" });
+  }
+
+  function paketEntries(days) {
+    return [
+      { name: "bukti/" },
+      ...days.map((d) => ({ name: `bukti/${d}/` })),
+      { name: "template-log-magang.csv", data: templateCSV(days) },
+    ];
+  }
+
+  function unduhPaket() {
+    const days = workdays();
+    if (!days.length) return alert("Isi tanggal mulai & selesai magang dulu.");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(makeZip(paketEntries(days)));
+    a.download = `persiapan-log-magang-${cfg.tglMulai}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
 
   function setFiles(list) {
     state.files = [...list].filter((f) => /\.(pdf|png|jpe?g)$/i.test(f.name));
     const dates = new Set(state.files.map((f) => dateOfPath(f.webkitRelativePath || f.name)).filter(Boolean));
-    $("#alog-bukti-info").textContent = `${state.files.length} file bukti untuk ${dates.size} tanggal.`;
+    const el = $("#alog-bukti-info");
+    el.className = "pill" + (state.files.length ? " ok" : "");
+    el.innerHTML = `${icon("check", 14)} ${state.files.length} file bukti untuk ${dates.size} tanggal`;
     $("#alog-kirim").disabled = true;
   }
 
@@ -333,11 +581,17 @@
   }
 
   function renderPreview(entries) {
-    const label = { ok: "✅ siap", skip: "⏭️ sudah ada", warn: "⚠️", err: "❌" };
-    $("#alog-preview").innerHTML = `<table><tr><th>Tanggal</th><th>Keterangan</th><th>Bukti</th><th>Status</th></tr>${
-      entries.map((e) => `<tr><td>${e.date}</td><td>${esc(e.ket.slice(0, 70))}${e.ket.length > 70 ? "…" : ""}</td>
-        <td>${e.files ? e.files.length : "-"}</td><td class="${e.status}">${label[e.status]} ${esc(e.note || "")}</td></tr>`).join("")
-    }</table>`;
+    const label = { ok: "Siap", skip: "Sudah ada", warn: "Bukti belum ada", err: "Error" };
+    const n = (s) => entries.filter((e) => e.status === s).length;
+    $("#alog-preview").innerHTML = `
+      <div class="stats">
+        <span class="stat ok">${n("ok")} siap dikirim</span><span class="stat skip">${n("skip")} sudah ada</span>
+        <span class="stat warn">${n("warn")} bukti belum ada</span>${n("err") ? `<span class="stat err">${n("err")} error</span>` : ""}
+      </div>
+      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Keterangan</th><th>Bukti</th><th>Status</th></tr></thead><tbody>${
+      entries.map((e) => `<tr><td style="white-space:nowrap">${e.date}</td><td>${esc(e.ket.slice(0, 90))}${e.ket.length > 90 ? "…" : ""}</td>
+        <td>${e.files ? e.files.length : "-"}</td><td><span class="badge ${e.status}">${e.status === "err" ? esc(e.note) : label[e.status]}</span></td></tr>`).join("")
+    }</tbody></table></div>`;
   }
 
   async function cek() {
@@ -352,22 +606,20 @@
     }
     state.ready = entries.filter((e) => e.status === "ok");
     renderPreview(entries);
-    const n = (s) => entries.filter((e) => e.status === s).length;
-    $("#alog-preview").insertAdjacentHTML("afterbegin",
-      `<p class="hint"><b>${n("ok")} siap</b> · ${n("skip")} sudah ada di portal · ${n("warn")} bukti belum ada · ${n("err")} error</p>`);
-    $("#alog-kirim").textContent = `🚀 Kirim ${state.ready.length} log`;
+    $("#alog-kirim-label").textContent = state.ready.length ? `Kirim ${state.ready.length} log` : "Kirim";
     $("#alog-kirim").disabled = !state.ready.length;
-    if (!entries.length) $("#alog-preview").innerHTML = `<p class="err">Tidak ada baris valid. Pastikan kolom pertama berisi tanggal.</p>`;
+    if (!entries.length) $("#alog-preview").innerHTML = `<div class="empty">Tidak ada baris valid. Pastikan kolom pertama berisi tanggal dan kolom kedua keterangan.</div>`;
   }
 
   async function kirim() {
     const todo = state.ready;
     if (!confirm(`Kirim ${todo.length} log ke Student Portal?\n${todo[0].date} … ${todo[todo.length - 1].date}`)) return;
     state.stop = false;
-    const log = $("#alog-log"), prog = $("#alog-prog");
-    log.hidden = false; prog.hidden = false; log.textContent = ""; prog.max = todo.length; prog.value = 0;
+    const log = $("#alog-log"), bar = $("#alog-bar");
+    log.hidden = false; $("#alog-progress").hidden = false; log.textContent = ""; bar.style.width = "0";
     for (const b of ["#alog-kirim", "#alog-cek"]) $(b).disabled = true;
-    $("#alog-stop").disabled = false;
+    $("#alog-stop").hidden = false;
+    let done = 0;
     let ok = 0;
     for (const e of todo) {
       if (state.stop) { log.textContent += "Dihentikan.\n"; break; }
@@ -379,17 +631,20 @@
         log.textContent += `❌ ${e.date}: ${err.message}\n`;
       }
       log.scrollTop = log.scrollHeight;
-      prog.value++;
+      bar.style.width = `${(++done / todo.length) * 100}%`;
       await sleep(1500);
     }
     log.textContent += `\nSelesai: ${ok}/${todo.length} tersimpan. Halaman akan di-refresh…`;
-    $("#alog-stop").disabled = true;
+    $("#alog-stop").hidden = true;
     sessionStorage.setItem(STORE + "-open", "1");
     setTimeout(() => location.reload(), 2500);
   }
 
   $("#alog-btn").onclick = () => panel.classList.toggle("open");
+  $("#alog-zip").onclick = () => unduhPaket();
   $("#alog-x").onclick = () => panel.classList.remove("open");
+  $("#alog-overlay").onclick = () => panel.classList.remove("open");
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") panel.classList.remove("open"); });
   $("#alog-pickdir").onclick = () => $("#alog-dir").click();
   $("#alog-pickfiles").onclick = () => $("#alog-files").click();
   $("#alog-dir").onchange = (e) => setFiles(e.target.files);
