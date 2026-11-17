@@ -11,6 +11,7 @@ Tool tidak resmi. Kamu login sendiri di jendela browser; script tidak pernah men
 import argparse
 import csv
 import datetime as dt
+import io
 import re
 import sys
 import tempfile
@@ -59,7 +60,7 @@ def read_rows(cfg):
     delim = ";" if text.splitlines()[0].count(";") > text.splitlines()[0].count(",") else ","
     default = cfg.get("default", {})
     rows = []
-    for i, r in enumerate(csv.DictReader(text.splitlines(), delimiter=delim), start=2):
+    for i, r in enumerate(csv.DictReader(io.StringIO(text, newline=""), delimiter=delim), start=2):
         r = {(k or "").strip().lower(): (v or "").strip() for k, v in r.items()}
         if not r.get("tanggal"):
             continue
