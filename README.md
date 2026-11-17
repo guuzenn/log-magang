@@ -1,48 +1,68 @@
 # Auto Log Aktivitas Kampus Merdeka (Student Portal IPB)
 
-Isi log harian magang/MBKM di Student Portal IPB dari satu file CSV, tanpa input satu per satu.
-Jam, dosen, tipe, dan lokasi diisi otomatis dari config. Kamu cukup menulis **keterangan per hari**
-dan menaruh **bukti** di folder per tanggal.
+Isi puluhan Log Aktivitas Kampus Merdeka/magang di Student Portal IPB sekaligus. Kamu tidak perlu lagi
+input satu per satu. Jam, jenis kegiatan, dosen, tipe, dan lokasi diisi sekali. Setelah itu kamu cukup
+paste **tanggal + keterangan** dari spreadsheet dan memilih **folder bukti**.
 
-> Tool tidak resmi dan tidak berafiliasi dengan IPB. Kamu login sendiri di jendela browser;
-> script tidak pernah meminta atau menyimpan password. Isi log tetap tanggung jawabmu, jadi tulis sesuai kegiatan asli.
+> Tool tidak resmi dan tidak berafiliasi dengan IPB. Tool ini berjalan di tab yang sudah kamu login-kan,
+> tidak pernah meminta atau menyimpan password, dan hanya berkomunikasi dengan `studentportal.ipb.ac.id`.
+> Isi log tetap tanggung jawabmu, jadi tulis sesuai kegiatan asli.
 
-## Instalasi
+Ada dua cara pakai:
+
+| | Userscript (disarankan) | Python CLI |
+|---|---|---|
+| Install | Ekstensi Tampermonkey | Python + Playwright |
+| Input data | Paste dari spreadsheet | File `log.csv` |
+| Cocok untuk | Semua orang | Yang nyaman pakai terminal |
+
+---
+
+## Opsi 1: Userscript (paling gampang)
+
+1. Install ekstensi **[Tampermonkey](https://www.tampermonkey.net/)** di Chrome, Edge, atau Firefox.
+   Di Chrome/Edge, aktifkan juga **Developer mode** di halaman `chrome://extensions`. Tampermonkey mewajibkan ini.
+2. Buka file [`auto-log-ipb.user.js`](auto-log-ipb.user.js), klik **Raw**, lalu klik **Install** di Tampermonkey.
+3. Buka Student Portal, lalu menu **Kemahasiswaan → Aktivitas → Log Aktivitas**. Tombol **⚡ Auto Log** muncul di kanan bawah.
+4. Di panel yang terbuka:
+   1. **Pengaturan default:** jam, jenis kegiatan, tipe, lokasi, dan dosen. Semuanya tersimpan otomatis di browser.
+   2. **Paste data:** blok kolom *Tanggal* dan *Keterangan* di Google Sheets/Excel, Ctrl+C, lalu Ctrl+V.
+      Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, dan `11 Agustus 2026`.
+   3. **Pilih bukti:** pilih folder `bukti/` yang berisi subfolder per tanggal, atau file yang namanya diawali tanggal.
+   4. **🔍 Cek data**, lalu **🚀 Kirim**.
+
+### Struktur folder bukti
+```
+bukti/
+├── 2026-08-11/
+│   ├── standup.jpg
+│   └── commit.png        <- beberapa foto otomatis digabung jadi 1 gambar
+├── 2026-08-12/
+│   └── laporan.pdf       <- 1 PDF dipakai apa adanya
+└── 2026-08-13.jpg        <- atau cukup file bernama tanggal
+```
+
+Tanggal yang sudah ada di portal otomatis dilewati, jadi aman dipakai berkali-kali sambil mencicil.
+
+---
+
+## Opsi 2: Python CLI
+
 Butuh Python 3.10+ dan Google Chrome.
 ```bash
 pip install -r requirements.txt
 ```
-Kalau tidak punya Chrome: `python -m playwright install chromium`.
+Kalau tidak punya Chrome, jalankan juga `python -m playwright install chromium`.
 
-## Pemakaian
-1. **Config:** copy `config.example.yaml` jadi `config.yaml`, lalu isi URL halaman log, tanggal magang, dan nilai default.
-2. **Generate template:**
-   ```bash
-   python main.py init
-   ```
-   Perintah ini membuat `log.csv` berisi semua hari kerja dan folder `bukti/YYYY-MM-DD/` untuk tiap hari.
-3. **Isi `log.csv`** (bisa dibuka di Excel / Google Sheets). Kolom `keterangan` wajib diisi.
-   Kolom `jam_mulai`, `jam_selesai`, `tipe`, `lokasi`, dan `jenis_kegiatan` boleh dikosongkan supaya memakai default.
-   Baris dengan keterangan kosong (libur/izin) otomatis dilewati.
-4. **Taruh bukti** di `bukti/2026-07-14/` dan seterusnya. Format yang diterima: 1 file PDF/JPG/PNG,
-   atau beberapa gambar yang otomatis digabung jadi 1 PDF.
-5. **Cek data:**
-   ```bash
-   python main.py cek
-   ```
-6. **Coba dulu (tidak disimpan):**
-   ```bash
-   python main.py run --dry-run
-   ```
-   Browser akan terbuka. Login, lalu lihat form yang terisi.
-7. **Jalankan:**
-   ```bash
-   python main.py run
-   ```
-   Opsi tambahan: `--limit 5` untuk memproses 5 entri saja, `--tanggal 2026-07-14 2026-07-15` untuk tanggal tertentu.
+1. Copy `config.example.yaml` jadi `config.yaml`, lalu isi URL halaman log, tanggal magang, dan nilai default.
+2. Jalankan `python main.py init`. Perintah ini membuat `log.csv` berisi semua hari kerja dan folder `bukti/YYYY-MM-DD/`.
+3. Isi kolom `keterangan` di `log.csv`. Kolom lain boleh dikosongkan supaya memakai default.
+4. Jalankan `python main.py cek` untuk melihat entri mana yang sudah siap.
+5. Jalankan `python main.py run --dry-run`. Browser akan terbuka, lalu kamu login dan melihat form yang terisi tanpa disimpan.
+6. Jalankan `python main.py run`. Opsi tambahan: `--limit 5` dan `--tanggal 2026-07-14`.
 
-Tanggal yang sudah ada di portal otomatis dilewati, jadi aman dijalankan berkali-kali sambil mencicil.
+Catatan: portal hanya mengizinkan satu sesi login aktif. Login di browser lain akan memutus sesi script.
 
 ## Privasi
 `config.yaml`, `log.csv`, `bukti/`, dan `.browser-profile/` (session login) sudah masuk `.gitignore`.
-Jangan upload file-file itu ke mana pun.
+Pengaturan userscript tersimpan di `localStorage` browser kamu sendiri.
