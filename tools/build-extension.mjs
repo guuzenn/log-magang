@@ -4,8 +4,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = fs.readFileSync(path.join(root, "auto-log-ipb.user.js"), "utf8");
 const version = src.match(/@version\s+([\d.]+)/)?.[1];
 if (!version) throw new Error("@version tidak ditemukan di userscript");
@@ -39,6 +40,9 @@ const crc32 = (buf) => {
 };
 const locals = [], central = [];
 let offset = 0;
+const now = new Date(); // tanggal file di ZIP (format DOS)
+const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
 for (const [name, data] of Object.entries(files)) {
   const raw = Buffer.isBuffer(data) ? data : Buffer.from(data);
   const comp = zlib.deflateRawSync(raw);
@@ -46,10 +50,12 @@ for (const [name, data] of Object.entries(files)) {
   const crc = crc32(raw);
   const lh = Buffer.alloc(30);
   lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(8, 8);
+  lh.writeUInt16LE(dosTime, 10); lh.writeUInt16LE(dosDate, 12);
   lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(comp.length, 18); lh.writeUInt32LE(raw.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
   locals.push(lh, nameBuf, comp);
   const ch = Buffer.alloc(46);
   ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(8, 10);
+  ch.writeUInt16LE(dosTime, 12); ch.writeUInt16LE(dosDate, 14);
   ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(comp.length, 20); ch.writeUInt32LE(raw.length, 24); ch.writeUInt16LE(nameBuf.length, 28);
   ch.writeUInt32LE(offset, 42);
   central.push(ch, nameBuf);

@@ -365,9 +365,9 @@
           <label class="field"><span class="label">Lokasi</span><input type="text" id="alog-lokasi" placeholder="Nama kantor, alamat lengkap"></label>
           <div class="field"><span class="label">Dosen penggerak</span><div class="chips" id="alog-dosen"><span class="card-desc">Memuat…</span></div></div>
         `)}
-        ${card(2, "sheet", "Data dari spreadsheet", "Blok kolom <b>Tanggal</b> &amp; <b>Keterangan</b> di Google Sheets/Excel, salin (Ctrl+C), lalu tempel di sini (Ctrl+V).", `
+        ${card(2, "sheet", "Data dari spreadsheet", "Blok kolom <b>Tanggal</b> &amp; <b>Kegiatan</b> di Excel/Google Sheets, salin (Ctrl+C), lalu tempel di sini (Ctrl+V).", `
           <textarea id="alog-data" placeholder="Senin, 13 Juli 2026&#9;- Onboarding dan setup environment&#10;Selasa, 14 Juli 2026&#9;- Mapping ERD ke Prisma schema"></textarea>
-          <p class="note">${icon("info", 15)}<span>Baris judul dan baris tanpa keterangan otomatis dilewati. Sel berisi beberapa baris tetap terbaca utuh.</span></p>
+          <p class="note">${icon("info", 15)}<span>Baris judul dan baris tanpa kegiatan otomatis dilewati. Sel berisi beberapa baris tetap terbaca utuh.</span></p>
         `)}
         ${card(3, "paperclip", "Bukti aktivitas", "Pilih folder <code>bukti</code> (subfolder per tanggal) atau file yang namanya diawali tanggal.", `
           <div class="tiles">
@@ -681,7 +681,7 @@
         <span class="stat ok">${n("ok")} siap dikirim</span><span class="stat skip">${n("skip")} sudah ada</span>
         <span class="stat warn">${n("warn")} bukti belum ada</span>${n("err") ? `<span class="stat err">${n("err")} error</span>` : ""}
       </div>
-      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Keterangan</th><th>Bukti</th><th>Status</th></tr></thead><tbody>${
+      <div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Bukti</th><th>Status</th></tr></thead><tbody>${
       entries.map((e) => `<tr><td style="white-space:nowrap">${e.date}</td><td>${esc(e.ket.slice(0, 90))}${e.ket.length > 90 ? "…" : ""}</td>
         <td>${e.files ? e.files.length : "-"}</td><td><span class="badge ${e.status}">${e.status === "err" ? esc(e.note) : label[e.status]}</span></td></tr>`).join("")
     }</tbody></table></div>`;
@@ -701,7 +701,7 @@
     renderPreview(entries);
     $("#alog-kirim-label").textContent = state.ready.length ? `Kirim ${state.ready.length} log` : "Kirim";
     $("#alog-kirim").disabled = !state.ready.length;
-    if (!entries.length) $("#alog-preview").innerHTML = `<div class="empty">Tidak ada baris valid. Pastikan kolom pertama berisi tanggal dan kolom kedua keterangan.</div>`;
+    if (!entries.length) $("#alog-preview").innerHTML = `<div class="empty">Tidak ada baris valid. Pastikan kolom pertama berisi tanggal dan kolom kedua kegiatan.</div>`;
   }
 
   async function kirim() {

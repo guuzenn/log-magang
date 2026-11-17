@@ -4,7 +4,7 @@
 
 Isi puluhan Log Aktivitas Kampus Merdeka/magang di Student Portal IPB sekaligus dari spreadsheet. Kamu tidak perlu lagi
 input satu per satu. Jam, jenis kegiatan, dosen, tipe, dan lokasi diisi sekali. Setelah itu kamu cukup
-paste **tanggal + keterangan** dari spreadsheet dan memilih **folder bukti**.
+paste **tanggal + kegiatan** dari spreadsheet dan memilih **folder bukti**.
 
 https://github.com/user-attachments/assets/489b420d-be52-410d-804c-8ee54ea06e03
 
@@ -82,6 +82,9 @@ Butuh Python 3.10+ dan Google Chrome.
 pip install -r requirements.txt
 ```
 Kalau tidak punya Chrome, jalankan juga `python -m playwright install chromium`.
+
+> **Windows:** kalau `python` atau `pip` tidak dikenali, pakai `py`, misalnya `py -m pip install -r requirements.txt`
+> dan `py main.py init`.
 
 1. Copy `config.example.yaml` jadi `config.yaml`, lalu isi URL halaman log, tanggal magang, dan nilai default.
 2. Jalankan `python main.py init`. Perintah ini membuat `log.csv` berisi semua hari kerja dan folder `bukti/YYYY-MM-DD/`.
