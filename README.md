@@ -21,7 +21,10 @@ Ada dua cara pakai:
 ## Opsi 1: Userscript (paling gampang)
 
 1. Install ekstensi **[Tampermonkey](https://www.tampermonkey.net/)** di Chrome, Edge, atau Firefox.
-   Di Chrome/Edge, aktifkan juga **Developer mode** di halaman `chrome://extensions`. Tampermonkey mewajibkan ini.
+   Di Chrome/Edge, ada satu langkah tambahan supaya script bisa jalan:
+   - Buka `chrome://extensions`, cari **Tampermonkey**, lalu klik **Details**.
+   - Nyalakan **Allow User Scripts**.
+   - Kalau opsi itu tidak muncul (versi Chrome lama), nyalakan **Developer mode** di kanan atas halaman `chrome://extensions`.
 2. Klik **[Install Auto Log](https://github.com/guuzenn/log-magang/releases/latest/download/auto-log-ipb.user.js)**, lalu klik **Install** di Tampermonkey.
    Script akan otomatis ter-update setiap kali ada rilis baru.
 3. Buka Student Portal, lalu menu **Kemahasiswaan → Aktivitas → Log Aktivitas**. Tombol **⚡ Auto Log** muncul di kanan bawah.
