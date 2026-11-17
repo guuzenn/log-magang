@@ -1,0 +1,6 @@
+# data pribadi & session login
+config.yaml
+log.csv
+bukti/
+.browser-profile/
+__pycache__/

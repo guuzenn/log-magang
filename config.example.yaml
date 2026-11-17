@@ -1,0 +1,22 @@
+# Copy file ini jadi config.yaml lalu isi. config.yaml TIDAK ikut di-commit.
+
+# URL halaman "Log Aktivitas" kegiatanmu (buka dari menu Kemahasiswaan > Aktivitas > Log)
+url_log: "https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/GANTI_DENGAN_ID_KEGIATANMU"
+
+# Rentang magang (dipakai oleh `py main.py init`)
+tanggal_mulai: "2026-07-11"
+tanggal_selesai: "2026-12-18"
+hari_kerja: [senin, selasa, rabu, kamis, jumat]
+
+# Nilai default tiap log. Bisa ditimpa per baris lewat kolom dengan nama yang sama di log.csv
+default:
+  jam_mulai: "08:00"
+  jam_selesai: "17:00"
+  jenis_kegiatan: "Berita Acara Kegiatan"   # Berita Acara Kegiatan / Berita Acara Pembimbingan / Berita Acara Ujian
+  tipe: offline                             # hybrid / offline / online
+  lokasi: "Nama kantor, alamat"
+  dosen: semua                              # "semua", atau daftar potongan nama: ["Nama Dosen"]
+
+file_log: log.csv
+folder_bukti: bukti
+jeda_detik: 2
