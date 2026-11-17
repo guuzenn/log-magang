@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.2.1
+// @version      1.2.2
 // @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
@@ -132,6 +132,15 @@
     }
   }
 
+  const isHeic = (f) => /\.(heic|heif)$/i.test(f.name);
+
+  // Chrome/Edge umumnya belum bisa membuka HEIC (foto iPhone), Safari bisa. Dicek sekali dengan file asli.
+  let heicSupport = null;
+  async function canOpenHeic(file) {
+    if (heicSupport === null) heicSupport = await loadImage(file).then(() => true, () => false);
+    return heicSupport;
+  }
+
   // 1 file -> dipakai langsung (gambar besar dikompres). Banyak gambar -> disusun vertikal jadi 1 JPG.
   async function buildUpload(files, date) {
     const pdfs = files.filter((f) => /\.pdf$/i.test(f.name));
@@ -139,8 +148,11 @@
       if (files.length > 1) throw new Error("folder berisi PDF + file lain; sisakan 1 PDF saja");
       return pdfs[0];
     }
-    if (files.length === 1 && files[0].size < 1.5 * 1024 * 1024) return files[0];
-    const imgs = await Promise.all(files.map(loadImage));
+    // HEIC selalu digambar ulang jadi JPG, karena portal hanya menerima JPG/PNG/PDF.
+    if (files.length === 1 && !isHeic(files[0]) && files[0].size < 1.5 * 1024 * 1024) return files[0];
+    const imgs = await Promise.all(files.map((f) => loadImage(f).catch(() => {
+      throw new Error(isHeic(f) ? `${f.name}: foto HEIC tidak bisa dibuka browser ini, ubah dulu ke JPG` : `${f.name}: gambar tidak bisa dibaca`);
+    })));
     const W = 1200;
     const sizes = imgs.map((im) => {
       const s = Math.min(1, W / im.naturalWidth);
@@ -391,9 +403,9 @@
             <button class="tile" id="alog-pickfiles">${icon("image", 26)}<b>Pilih file</b><span>2026-08-11.jpg</span></button>
           </div>
           <input type="file" id="alog-dir" webkitdirectory multiple hidden>
-          <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg" hidden>
+          <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg,.heic,.heif" hidden>
           <div class="pill" id="alog-bukti-info">Belum ada bukti dipilih</div>
-          <p class="note">${icon("info", 15)}<span>Beberapa foto di satu tanggal otomatis digabung jadi 1 gambar. Format: JPG, PNG, atau 1 PDF.</span></p>
+          <p class="note">${icon("info", 15)}<span>Beberapa foto di satu tanggal otomatis digabung jadi 1 gambar. Format: JPG, PNG, atau 1 PDF. Foto iPhone (HEIC) dipakai kalau browser bisa membukanya; kalau tidak, ubah dulu ke JPG.</span></p>
         `)}
         ${card(4, "check", "Cek &amp; kirim", "Periksa dulu sebelum dikirim. Tanggal yang sudah ada di portal otomatis dilewati.", `
           <div id="alog-progress" class="progress" hidden><div id="alog-bar"></div></div>
@@ -660,7 +672,7 @@
   }
 
   function setFiles(list) {
-    state.files = [...list].filter((f) => /\.(pdf|png|jpe?g)$/i.test(f.name));
+    state.files = [...list].filter((f) => /\.(pdf|png|jpe?g|heic|heif)$/i.test(f.name));
     const dates = new Set(state.files.map((f) => dateOfPath(f.webkitRelativePath || f.name)).filter(Boolean));
     const el = $("#alog-bukti-info");
     el.className = "pill" + (state.files.length ? " ok" : "");
@@ -713,12 +725,19 @@
 
   async function cek() {
     if (!cfg.jamMulai || !cfg.jamSelesai || !cfg.lokasi.trim()) return alert("Lengkapi jam & lokasi di Pengaturan default dulu.");
+    // cfg.dosen kosong berarti "semua", jadi kalau semua centang dihapus jangan sampai terkirim ke semua dosen.
+    const dosenBoxes = [...panel.querySelectorAll("#alog-dosen input")];
+    if (dosenBoxes.length && !dosenBoxes.some((b) => b.checked)) return alert("Pilih minimal satu dosen pembimbing di Pengaturan default.");
     const existing = datesFromDoc(await fetchDoc(location.href));
     const entries = collect();
     for (const e of entries) {
       if (e.status) continue;
       if (existing.has(e.date)) { e.status = "skip"; continue; }
       if (!e.files.length) { e.status = "warn"; e.note = "bukti belum ada"; continue; }
+      const heic = e.files.find(isHeic);
+      if (heic && !(await canOpenHeic(heic))) {
+        e.status = "err"; e.note = "foto HEIC tidak bisa dibuka browser ini, ubah dulu ke JPG"; continue;
+      }
       e.status = "ok";
     }
     state.ready = entries.filter((e) => e.status === "ok");

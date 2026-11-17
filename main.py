@@ -21,8 +21,19 @@ import yaml
 
 ROOT = Path(__file__).parent
 PROFILE_DIR = ROOT / ".browser-profile"   # session login disimpan di sini (jangan di-commit)
-IMG_EXT = {".jpg", ".jpeg", ".png"}
+HEIC_EXT = {".heic", ".heif"}  # foto iPhone; dikonversi lewat pillow-heif
+IMG_EXT = {".jpg", ".jpeg", ".png"} | HEIC_EXT
 OK_EXT = IMG_EXT | {".pdf"}
+
+
+def heic_ready():
+    """Aktifkan pembaca HEIC untuk Pillow. False kalau pillow-heif belum terpasang."""
+    try:
+        from pillow_heif import register_heif_opener
+    except ImportError:
+        return False
+    register_heif_opener()
+    return True
 HARI = ["senin", "selasa", "rabu", "kamis", "jumat", "sabtu", "minggu"]
 BULAN = ["januari", "februari", "maret", "april", "mei", "juni", "juli",
          "agustus", "september", "oktober", "november", "desember"]
@@ -148,7 +159,15 @@ def read_rows(cfg):
         sys.exit(f"{path.name} belum ada. Jalankan: py main.py init")
     source = _rows_xlsx(path, cfg.get("sheet")) if path.suffix.lower() in (".xlsx", ".xlsm") else _rows_csv(path)
     default = cfg.get("default", {})
+    dosen = default.get("dosen", "semua")
+    if isinstance(dosen, str) and dosen.strip().lower() != "semua":
+        dosen = [dosen]  # satu nama ditulis tanpa [ ]
+    if isinstance(dosen, list):
+        dosen = [str(n).strip() for n in dosen if str(n).strip()]  # list kosong -> ditolak di check_row
+    else:
+        dosen = "semua"
     rows = []
+    seen = {}  # tanggal -> nomor baris, untuk menolak tanggal dobel
     source = list(source)
     order = numeric_order(r.get("tanggal") for _, r in source if r.get("tanggal"))
     if order == "mdy":
@@ -163,6 +182,12 @@ def read_rows(cfg):
                 continue  # baris catatan/kosong di spreadsheet
             sys.exit(f"{path.name} baris {i}: {e}")
         r["keterangan"] = "\n".join(l.strip() for l in (r.get("keterangan") or "").splitlines() if l.strip())
+        if r["keterangan"]:
+            if tgl in seen:
+                # Kalau dibiarkan, dua-duanya terkirim dan portal berisi log dobel.
+                sys.exit(f"{path.name} baris {i}: tanggal {tgl.isoformat()} dobel (sudah ada di baris {seen[tgl]}). "
+                         "Gabungkan atau hapus salah satu.")
+            seen[tgl] = i
         get = lambda k: r.get(k) or str(default.get(k, "") or "")
         rows.append({
             "tanggal": tgl,
@@ -172,7 +197,7 @@ def read_rows(cfg):
             "jenis_kegiatan": get("jenis_kegiatan"),
             "tipe": get("tipe").lower(),
             "lokasi": get("lokasi"),
-            "dosen": default.get("dosen", "semua"),
+            "dosen": dosen,
         })
     return rows
 
@@ -185,8 +210,10 @@ def find_bukti(cfg, tgl):
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() in OK_EXT)
     if not files:
         return None, "folder bukti kosong"
-    if len(files) == 1:
-        return files[0], None
+    if any(p.suffix.lower() in HEIC_EXT for p in files) and not heic_ready():
+        return None, "ada foto HEIC; pasang dulu: py -m pip install pillow-heif"
+    if len(files) == 1 and files[0].suffix.lower() not in HEIC_EXT:
+        return files[0], None  # HEIC tetap lewat merge_images supaya jadi format yang diterima portal
     imgs = [p for p in files if p.suffix.lower() in IMG_EXT]
     if len(imgs) != len(files):
         return None, "isi folder campur PDF + file lain; sisakan 1 PDF atau gambar saja"
@@ -195,6 +222,7 @@ def find_bukti(cfg, tgl):
 
 def merge_images(paths, tgl):
     from PIL import Image
+    heic_ready()
     pages = []
     for p in paths:
         im = Image.open(p).convert("RGB")
@@ -218,6 +246,8 @@ def check_row(cfg, row):
             problems.append(f"{k} harus format HH:MM")
     if not row["lokasi"]:
         problems.append("lokasi kosong")
+    if row["dosen"] != "semua" and not row["dosen"]:
+        problems.append('dosen kosong: isi "semua" atau minimal satu nama di config.yaml')
     bukti, err = find_bukti(cfg, row["tanggal"])
     if err:
         problems.append(err)

@@ -78,6 +78,8 @@ Berlaku untuk Opsi 1 dan 2.
       Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, `11 Agustus 2026`, dan format US `8/11/2026`
       (terdeteksi otomatis kalau ada tanggal seperti `8/19/2026`). Baris yang tanggalnya tidak terbaca ditandai **Error**, tidak dilewati diam-diam.
    3. **Pilih bukti:** pilih folder `bukti/` yang berisi subfolder per tanggal, atau file yang namanya diawali tanggal.
+      Format JPG, PNG, atau 1 PDF. Foto iPhone (HEIC) dipakai kalau browser bisa membukanya (mis. Safari);
+      di Chrome/Edge tanggal itu ditandai **Error**, jadi ubah dulu ke JPG atau setel iPhone ke *Settings → Camera → Formats → Most Compatible*.
    4. **🔍 Cek data**, lalu **🚀 Kirim**.
 
 ### Struktur folder bukti
@@ -116,7 +118,10 @@ Kalau tidak punya Chrome, jalankan juga `python -m playwright install chromium`.
 5. Jalankan `python main.py run --dry-run`. Browser akan terbuka, lalu kamu login dan melihat form yang terisi tanpa disimpan.
 6. Jalankan `python main.py run`. Opsi tambahan: `--limit 5` dan `--tanggal 2026-07-14`.
 
-Catatan: portal hanya mengizinkan satu sesi login aktif. Login di browser lain akan memutus sesi script.
+Catatan:
+- Foto iPhone (HEIC) didukung dan otomatis dikonversi (butuh `pillow-heif`, sudah ada di `requirements.txt`).
+- Tanggal yang muncul dua kali di data ditolak supaya tidak terkirim dobel.
+- Portal hanya mengizinkan satu sesi login aktif. Login di browser lain akan memutus sesi script.
 
 ## Privasi
 `config.yaml`, `log.csv`, `bukti/`, dan `.browser-profile/` (session login) sudah masuk `.gitignore`.
