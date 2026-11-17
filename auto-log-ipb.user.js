@@ -5,6 +5,10 @@
 // @description  Isi banyak Log Aktivitas Kampus Merdeka sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
+// @homepageURL  https://github.com/guuzenn/log-magang
+// @supportURL   https://github.com/guuzenn/log-magang/issues
+// @updateURL    https://github.com/guuzenn/log-magang/releases/latest/download/auto-log-ipb.user.js
+// @downloadURL  https://github.com/guuzenn/log-magang/releases/latest/download/auto-log-ipb.user.js
 // ==/UserScript==
 
 /*
