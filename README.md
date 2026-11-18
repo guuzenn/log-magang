@@ -8,6 +8,8 @@ paste **tanggal + kegiatan** dari spreadsheet dan memilih **folder bukti**.
 
 https://github.com/user-attachments/assets/489b420d-be52-410d-804c-8ee54ea06e03
 
+**[➜ Pasang dari Chrome Web Store](https://chromewebstore.google.com/detail/gjhmgccpfhjdnomfgmpolaokeohbolgm)** · gratis · Chrome & Edge
+
 > Tool tidak resmi dan tidak berafiliasi dengan IPB. Tool ini berjalan di tab yang sudah kamu login-kan,
 > tidak pernah meminta atau menyimpan password, dan hanya berkomunikasi dengan `studentportal.ipb.ac.id`.
 > Isi log tetap tanggung jawabmu, jadi tulis sesuai kegiatan asli.
@@ -16,11 +18,11 @@ Ada tiga cara pakai:
 
 | | Opsi 1: Extension Chrome | Opsi 2: Userscript | Opsi 3: Python CLI |
 |---|---|---|---|
-| Status | Segera di Chrome Web Store | **Disarankan saat ini** | Tersedia |
+| Status | **Disarankan** | Tersedia | Tersedia |
 | Install | Satu klik dari Chrome Web Store | Ekstensi Tampermonkey | Python + Playwright |
 | Browser | Chrome, Edge | Chrome, Edge, Firefox | Chrome (dibuka otomatis) |
 | Input data | Paste dari spreadsheet | Paste dari spreadsheet | File `.xlsx` atau `log.csv` |
-| Cocok untuk | Semua orang | Semua orang, termasuk pengguna Firefox | Yang nyaman pakai terminal |
+| Cocok untuk | Semua orang | Pengguna Firefox | Yang nyaman pakai terminal |
 
 Opsi 1 dan 2 memakai panel yang sama persis, jadi pilih salah satu saja.
 
@@ -28,22 +30,30 @@ Opsi 1 dan 2 memakai panel yang sama persis, jadi pilih salah satu saja.
 
 ## Opsi 1: Extension Chrome
 
-Sedang direview di Chrome Web Store. Setelah terbit, cukup klik **Add to Chrome**, tanpa perlu Tampermonkey.
-Sambil menunggu, pakai [Opsi 2](#opsi-2-userscript-tampermonkey).
+### **[➜ Pasang Logmager dari Chrome Web Store](https://chromewebstore.google.com/detail/gjhmgccpfhjdnomfgmpolaokeohbolgm)**
+
+Klik **Add to Chrome**, lalu **Add extension**. Selesai, tanpa Tampermonkey dan tanpa pengaturan tambahan.
+Extension ter-update otomatis setiap ada versi baru. Bisa juga dipasang di **Edge** dari halaman yang sama
+(klik **Allow extensions from other stores** kalau Edge memintanya).
+
+Sudah pernah pasang userscript (Opsi 2)? Matikan atau hapus dulu di Tampermonkey supaya tidak dobel.
+Pengaturanmu tetap ada, karena keduanya membaca data yang sama di browser.
 
 <details>
-<summary>Tidak mau menunggu? Pasang manual dari file ZIP</summary>
+<summary>Pasang manual dari file ZIP (tanpa Chrome Web Store)</summary>
 
 1. Unduh `logmager-extension-<versi>.zip` dari [rilis terbaru](https://github.com/guuzenn/logmager/releases/latest), lalu klik kanan → **Extract All**.
 2. Buka `chrome://extensions`, lalu nyalakan **Developer mode** di kanan atas.
 3. Klik **Load unpacked**, lalu pilih folder hasil extract (yang berisi `manifest.json`).
 
-Cara ini tidak ter-update otomatis. Ulangi langkah di atas setiap ada rilis baru, atau pindah ke versi Chrome Web Store setelah terbit.
+Cara ini tidak ter-update otomatis. Ulangi langkah di atas setiap ada rilis baru.
 </details>
 
 Setelah terpasang, lanjut ke [Cara pakai panel](#cara-pakai-panel).
 
 ## Opsi 2: Userscript (Tampermonkey)
+
+Pilih ini kalau kamu pakai **Firefox**, atau tidak bisa memasang dari Chrome Web Store.
 
 1. Install ekstensi **[Tampermonkey](https://www.tampermonkey.net/)** di Chrome, Edge, atau Firefox.
    Di Chrome/Edge, ada satu langkah tambahan supaya script bisa jalan:
