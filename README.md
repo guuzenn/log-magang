@@ -1,3 +1,5 @@
+<img src="extension/icons/logo.svg" width="88" alt="Logo Logmager">
+
 # Logmager
 
 **Biar magang nggak bikin mager ngisi logbook.**

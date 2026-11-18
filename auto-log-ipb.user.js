@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.2.2
+// @version      1.2.3
 // @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
@@ -242,6 +242,15 @@
   const icon = (name, size = 18) =>
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
 
+  // Logo Logmager "logbook rebahan" (sama dengan extension/icons/logo.svg). simple = tanpa detail kecil, untuk ukuran mini.
+  const logo = (simple = false) => `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#1e3a8a"/>
+    <path d="M9 27c7-4 15-4 23 1v24c-8-5-16-5-23-1z" fill="#fff"/><path d="M55 27c-7-4-15-4-23 1v24c8-5 16-5 23-1z" fill="#dbeafe"/>
+    ${simple ? "" : '<path d="M14 35c5-2 9-2 13 0M14 41c5-2 9-2 13 0" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>'}
+    <path d="M41 8h11L41 19h11" fill="none" stroke="#fbbf24" stroke-width="${simple ? 5 : 3.6}" stroke-linecap="round" stroke-linejoin="round"/>
+    ${simple ? "" : '<path d="M30 12h6l-6 6h6" fill="none" stroke="#fbbf24" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'}
+  </svg>`;
+
   const css = `
   :host{all:initial}
   *{box-sizing:border-box;margin:0;font-family:Poppins,Inter,"Segoe UI",system-ui,sans-serif}
@@ -264,7 +273,8 @@
   .hd{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;color:#fff;
     background:var(--grad)}
   .brand{display:flex;align-items:center;gap:12px}
-  .logo{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,.18)}
+  .logo{display:block;width:40px;height:40px;border-radius:10px;box-shadow:0 0 0 2px rgba(255,255,255,.3)}
+  .fab .logo{width:26px;height:26px;border-radius:7px;box-shadow:none}
   .title{font-size:17px;font-weight:700}
   .sub{font-size:12.5px;opacity:.85}
   .icon-btn{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:10px;cursor:pointer;color:inherit;background:transparent}
@@ -353,11 +363,11 @@
   UI = shadow;
   shadow.innerHTML = `<style>${css}</style>
   <div class="root" id="alog">
-    <button class="fab" id="alog-btn">${icon("zap")} Logmager</button>
+    <button class="fab" id="alog-btn">${logo(true)} Logmager</button>
     <div class="overlay" id="alog-overlay"></div>
     <aside class="panel" role="dialog" aria-label="Logmager">
       <header class="hd">
-        <div class="brand"><div class="logo">${icon("zap", 22)}</div>
+        <div class="brand">${logo()}
           <div><div class="title">Logmager</div><div class="sub">Isi logbook IPB sekaligus dari spreadsheet</div></div></div>
         <button class="icon-btn" id="alog-x" title="Tutup">${icon("x", 20)}</button>
       </header>
