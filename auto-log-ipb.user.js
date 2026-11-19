@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Logmager: Auto Logbook Magang IPB
 // @namespace    https://github.com/guuzenn/log-magang
-// @version      1.2.3
+// @version      1.3.0
 // @description  Isi logbook IPB (Log Aktivitas Kampus Merdeka) sekaligus: paste dari spreadsheet, pilih folder bukti, kirim.
 // @match        https://studentportal.ipb.ac.id/Kegiatan/LogAktivitasKampusMerdeka/Index/*
 // @grant        none
@@ -77,7 +77,8 @@
   }
 
   // TSV hasil copy dari Google Sheets / Excel (sel multi-baris dibungkus tanda kutip)
-  function parseTSV(text) {
+  // Pemisah default tab (hasil copy Excel/Sheets); readCsv memakai koma/titik koma.
+  function parseTSV(text, sep = "\t") {
     const rows = [];
     let row = [], cell = "", q = false;
     for (let i = 0; i < text.length; i++) {
@@ -87,12 +88,110 @@
         else if (c === '"') q = false;
         else cell += c;
       } else if (c === '"' && cell === "") q = true;
-      else if (c === "\t") { row.push(cell); cell = ""; }
+      else if (c === sep) { row.push(cell); cell = ""; }
       else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
       else if (c !== "\r") cell += c;
     }
     if (cell || row.length) { row.push(cell); rows.push(row); }
     return rows;
+  }
+
+  // ------------------------------------------------------------------ baca spreadsheet (.xlsx / .csv) tanpa library
+  // .xlsx = ZIP berisi XML. Isi ZIP dibuka dengan DecompressionStream bawaan browser.
+  async function unzip(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const dv = new DataView(buf.buffer);
+    let eocd = buf.length - 22;
+    while (eocd >= 0 && dv.getUint32(eocd, true) !== 0x06054b50) eocd--;
+    if (eocd < 0) throw new Error("bukan file .xlsx yang valid");
+    const count = dv.getUint16(eocd + 10, true);
+    let p = dv.getUint32(eocd + 16, true);
+    const out = {};
+    for (let i = 0; i < count; i++) {
+      const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true);
+      const nameLen = dv.getUint16(p + 28, true), extra = dv.getUint16(p + 30, true), comment = dv.getUint16(p + 32, true);
+      const local = dv.getUint32(p + 42, true);
+      const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLen));
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      const raw = buf.subarray(start, start + size);
+      out[name] = async () => {
+        if (method === 0) return new TextDecoder().decode(raw);
+        const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Response(stream).text();
+      };
+      p += 46 + nameLen + extra + comment;
+    }
+    return out;
+  }
+
+  const xmlDoc = (s) => new DOMParser().parseFromString(s, "application/xml");
+  const colIndex = (ref) => [...ref.replace(/\d+/g, "")].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  const serialToIso = (n) => new Date(Date.UTC(1899, 11, 30) + Math.round(n * 864e5)).toISOString().slice(0, 10);
+
+  async function readXlsx(file) {
+    const z = await unzip(file);
+    const get = async (n) => (z[n] ? xmlDoc(await z[n]()) : null);
+    // Sheet pertama sesuai urutan di workbook.
+    let sheetPath = "xl/worksheets/sheet1.xml";
+    const wb = await get("xl/workbook.xml"), rels = await get("xl/_rels/workbook.xml.rels");
+    const first = wb?.getElementsByTagNameNS("*", "sheet")[0];
+    const rid = first?.getAttribute("r:id") || first?.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+    const rel = rid && [...(rels?.getElementsByTagNameNS("*", "Relationship") || [])].find((r) => r.getAttribute("Id") === rid);
+    if (rel) sheetPath = "xl/" + rel.getAttribute("Target").replace(/^\/?xl\//, "").replace(/^\//, "");
+    const shared = [...((await get("xl/sharedStrings.xml"))?.getElementsByTagNameNS("*", "si") || [])]
+      .map((si) => [...si.getElementsByTagNameNS("*", "t")].filter((t) => t.parentNode.localName !== "rPh").map((t) => t.textContent).join(""));
+    // Style mana yang berformat tanggal (format bawaan 14-22, 45-47, atau format kustom berisi d/m/y).
+    const styles = await get("xl/styles.xml");
+    const custom = {};
+    for (const f of styles?.getElementsByTagNameNS("*", "numFmt") || []) custom[f.getAttribute("numFmtId")] = f.getAttribute("formatCode");
+    const xfs = styles?.getElementsByTagNameNS("*", "cellXfs")[0];
+    const isDateStyle = [...(xfs?.getElementsByTagNameNS("*", "xf") || [])].map((xf) => {
+      const id = +xf.getAttribute("numFmtId");
+      const code = (custom[id] || "").replace(/\[[^\]]*\]|"[^"]*"/g, "");
+      return (id >= 14 && id <= 22) || (id >= 45 && id <= 47) || /[dmy]/i.test(code);
+    });
+    const sheet = await get(sheetPath);
+    if (!sheet) throw new Error("sheet tidak ditemukan");
+    return [...sheet.getElementsByTagNameNS("*", "row")].map((row) => {
+      const cells = [];
+      for (const c of row.getElementsByTagNameNS("*", "c")) {
+        const t = c.getAttribute("t"), v = c.getElementsByTagNameNS("*", "v")[0]?.textContent ?? "";
+        let val;
+        if (t === "s") val = shared[+v] ?? "";
+        else if (t === "inlineStr") val = [...c.getElementsByTagNameNS("*", "t")].map((x) => x.textContent).join("");
+        else if ((t === null || t === "n") && v !== "" && isDateStyle[+(c.getAttribute("s") || 0)]) val = serialToIso(+v);
+        else val = v;
+        cells[colIndex(c.getAttribute("r") || "A")] = val;
+      }
+      return Array.from(cells, (x) => x ?? "");
+    });
+  }
+
+  function readCsv(text) {
+    text = text.replace(/^﻿/, "");
+    const first = text.split(/\r?\n/)[0] || "";
+    // Parser yang sama dengan paste, jadi sel berkutip yang berisi baris baru tetap utuh.
+    return parseTSV(text, first.split(";").length > first.split(",").length ? ";" : ",");
+  }
+
+  // Ambil kolom Tanggal + Kegiatan dari tabel (baris judul dicari otomatis; kalau tidak ada, pakai kolom A & B).
+  function pickColumns(rows) {
+    const hi = rows.findIndex((r) => r.some((c) => /^\s*tanggal/i.test(c)));
+    if (hi < 0) return rows.map((r) => [r[0] || "", r[1] || ""]);
+    const h = rows[hi].map((c) => String(c).trim().toLowerCase());
+    const di = h.findIndex((c) => c.startsWith("tanggal"));
+    const ki = h.findIndex((c, i) => i !== di && /kegiatan|keterangan|aktivitas|report/.test(c));
+    return rows.slice(hi + 1).map((r) => [r[di] || "", r[ki < 0 ? di + 1 : ki] || ""]);
+  }
+
+  async function readSheet(file) {
+    try {
+      const rows = /\.csv$/i.test(file.name) ? readCsv(await file.text()) : await readXlsx(file);
+      return pickColumns(rows);
+    } catch (e) {
+      if (e.name === "NotReadableError") throw new Error(`${file.name} sedang dikunci. Simpan & tutup Excel dulu, lalu pilih lagi.`);
+      throw new Error(`${file.name} tidak bisa dibaca (${e.message}).`);
+    }
   }
 
   function cleanText(s) {
@@ -115,10 +214,14 @@
   }
 
   // ------------------------------------------------------------------ bukti
+  // Pakai tanggal TERAKHIR di path: folder persiapan sendiri bernama "persiapan-log-magang-2026-08-03",
+  // sedangkan tanggal bukti ada di subfolder/nama file sesudahnya.
   function dateOfPath(path) {
-    const m = path.match(/(\d{4})-(\d{2})-(\d{2})/);
+    const all = [...path.matchAll(/(\d{4})-(\d{2})-(\d{2})/g)];
+    const m = all[all.length - 1];
     return m ? iso(m[1], m[2], m[3]) : null;
   }
+  const pathOf = (f) => f.relPath || f.webkitRelativePath || f.name;
 
   async function loadImage(file) {
     const url = URL.createObjectURL(file);
@@ -238,6 +341,7 @@
     paperclip: '<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
     check: '<path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="m9 11 3 3L22 4"/>',
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   };
   const icon = (name, size = 18) =>
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
@@ -318,7 +422,14 @@
   .btn.danger{color:var(--err);border-color:#fecdd3}
   .btn:disabled{opacity:.45;cursor:not-allowed}
   .btn.block{width:100%}
-  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .tile.big{width:100%;padding:22px 12px;border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
+  .more{margin-top:12px;font-size:12.5px;color:var(--muted)}
+  .linkbtn{display:block;margin:10px auto 0;padding:0;border:0;background:none;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--primary);text-decoration:underline}
+  .more summary{cursor:pointer;font-weight:600;color:var(--primary)}
+  .more p{margin:8px 0}
+  .more textarea{margin-top:4px}
+  #alog-lastprep,#alog-src-info,#alog-bukti-info{margin-top:10px}
   .tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 12px;border:1.5px dashed #cbd5e1;border-radius:14px;
     cursor:pointer;background:#fff;color:var(--text);transition:all .15s;font-size:13px}
   .tile:hover{border-color:var(--primary);background:var(--primary-50);color:var(--primary-600)}
@@ -352,7 +463,7 @@
     <section class="card ${extra}">
       <div class="card-hd"><div class="step">${icon(ic)}</div>
         <div><div class="card-title">${n}. ${title}${extra === "highlight" ? ' <span class="tag">Sekali di awal</span>' : ""}</div>
-        <div class="card-desc">${desc}</div></div></div>
+        ${desc ? `<div class="card-desc">${desc}</div>` : ""}</div></div>
       ${body}
     </section>`;
 
@@ -368,72 +479,76 @@
     <aside class="panel" role="dialog" aria-label="Logmager">
       <header class="hd">
         <div class="brand">${logo()}
-          <div><div class="title">Logmager</div><div class="sub">Isi logbook IPB sekaligus dari spreadsheet</div></div></div>
+          <div><div class="title">Logmager</div><div class="sub">Isi logbook magang sekaligus</div></div></div>
         <button class="icon-btn" id="alog-x" title="Tutup">${icon("x", 20)}</button>
       </header>
       <main class="body">
-        ${card(0, "calendar", "Persiapan", "Buat folder bukti per hari & template spreadsheet untuk seluruh periode magang.", `
+        ${card(1, "calendar", "Persiapan", "", `
           <div class="grid">
-            <label class="field"><span class="label">Tanggal mulai magang</span><input type="date" id="alog-tmulai"></label>
-            <label class="field"><span class="label">Tanggal selesai</span><input type="date" id="alog-tselesai"></label>
+            <label class="field"><span class="label">Mulai magang</span><input type="date" id="alog-tmulai"></label>
+            <label class="field"><span class="label">Selesai</span><input type="date" id="alog-tselesai"></label>
           </div>
           <div class="field"><span class="label">Hari kerja</span>
             <div class="chips" id="alog-hari">${["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]
               .map((h, i) => `<label class="chip"><input type="checkbox" value="${i}">${h}</label>`).join("")}</div></div>
           <div class="pill" id="alog-prep-info"></div>
           <div class="field">${CAN_DIR ? `<button class="btn soft block" id="alog-prepdir">${icon("folder")} Buat folder persiapan</button>` : ""}
-            <button class="btn block" id="alog-zip"${CAN_DIR ? ' style="margin-top:8px"' : ""}>${icon("download")} ${CAN_DIR ? "Atau unduh sebagai .zip" : "Unduh paket persiapan (.zip)"}</button></div>
-          <p class="note">${icon("info", 15)}<span>Isinya: folder <code>bukti/</code> dengan subfolder tiap hari kerja (<code>bukti/2026-07-13/</code> dst.)
-            dan <code>template-log-magang.xlsx</code> (kolom Tanggal &amp; Kegiatan). ${CAN_DIR
-              ? "<b>Buat folder persiapan</b>: pilih <b>subfolder</b>, mis. buat folder baru <code>Magang</code> di dalam Documents. Chrome tidak mengizinkan memilih Documents/Desktop/Downloads langsung. Template yang sudah ada tidak ditimpa. Kalau gagal, otomatis ditawari unduh .zip."
-              : "Klik kanan ZIP lalu <b>Extract All</b>."} Buka template di Excel/Google Sheets dan isi kegiatan tiap hari.</span></p>
+            <button class="btn block" id="alog-zip"${CAN_DIR ? ' style="margin-top:8px"' : ""}>${icon("download")} ${CAN_DIR ? "Unduh .zip saja" : "Unduh paket persiapan (.zip)"}</button></div>
+          <details class="more"><summary>Isinya apa?</summary>
+            <p>Folder <code>bukti/</code> per tanggal + <code>template-log-magang.xlsx</code>. ${CAN_DIR
+              ? "Pilih folder baru, mis. <code>Documents\Magang</code> (Documents/Desktop langsung tidak bisa dipilih)."
+              : "Klik kanan ZIP, pilih <b>Extract All</b>."}</p></details>
         `, "highlight")}
-        ${card(1, "sliders", "Pengaturan default", "Dipakai untuk semua log. Tersimpan otomatis di browser ini.", `
+        ${card(2, "sliders", "Pengaturan", "Isi sekali, tersimpan otomatis.", `
           <div class="grid">
-            <label class="field"><span class="label">Jam mulai</span><input type="time" id="alog-mulai"></label>
-            <label class="field"><span class="label">Jam selesai</span><input type="time" id="alog-selesai"></label>
+            <label class="field"><span class="label" data-for="Tmw">Jam mulai</span><input type="time" id="alog-mulai"></label>
+            <label class="field"><span class="label" data-for="Tsw">Jam selesai</span><input type="time" id="alog-selesai"></label>
           </div>
-          <label class="field"><span class="label">Jenis kegiatan</span><select id="alog-jenis"></select></label>
-          <div class="field"><span class="label">Tipe penyelenggaraan</span>
+          <label class="field"><span class="label" data-for="JenisLogbookKegiatanKampusMerdekaId">Jenis kegiatan</span><select id="alog-jenis"></select></label>
+          <div class="field"><span class="label" data-for="IsLuring">Tipe</span>
             <div class="seg" id="alog-tipe">
-              <label><input type="radio" name="alog-tipe" value="">Hybrid</label>
-              <label><input type="radio" name="alog-tipe" value="true">Offline</label>
-              <label><input type="radio" name="alog-tipe" value="false">Online</label>
+              <label><input type="radio" name="alog-tipe" value=""><span>Hybrid</span></label>
+              <label><input type="radio" name="alog-tipe" value="true"><span>Offline</span></label>
+              <label><input type="radio" name="alog-tipe" value="false"><span>Online</span></label>
             </div></div>
-          <label class="field"><span class="label">Lokasi</span><input type="text" id="alog-lokasi" placeholder="Nama kantor, alamat lengkap"></label>
-          <div class="field"><span class="label">Dosen penggerak</span><div class="chips" id="alog-dosen"><span class="card-desc">Memuat…</span></div></div>
+          <label class="field"><span class="label" data-for="Lokasi">Lokasi</span><input type="text" id="alog-lokasi" placeholder="Nama kantor"></label>
+          <div class="field"><span class="label" data-for="ListDosenPembimbing">Dosen</span><div class="chips" id="alog-dosen"><span class="card-desc">Memuat…</span></div></div>
         `)}
-        ${card(2, "sheet", "Data dari spreadsheet", "Blok kolom <b>Tanggal</b> &amp; <b>Kegiatan</b> di Excel/Google Sheets, salin (Ctrl+C), lalu tempel di sini (Ctrl+V).", `
-          <textarea id="alog-data" placeholder="Senin, 13 Juli 2026&#9;- Onboarding dan setup environment&#10;Selasa, 14 Juli 2026&#9;- Mapping ERD ke Prisma schema"></textarea>
-          <p class="note">${icon("info", 15)}<span>Baris judul dan baris tanpa kegiatan otomatis dilewati. Sel berisi beberapa baris tetap terbaca utuh.</span></p>
+        ${card(3, "sheet", "Data &amp; bukti", "Isi Excel, simpan, lalu pilih folder persiapanmu.", `
+          <button class="tile big" id="alog-pickprep">${icon("folder", 28)}<b>Pilih folder persiapan</b><span>Ditanya “Upload”? Klik Upload, file tetap di laptopmu</span></button>
+          <button class="btn block" id="alog-lastprep" hidden>${icon("refresh")} <span id="alog-lastprep-label">Pakai folder terakhir</span></button>
+          ${CAN_DIR ? `<button class="linkbtn" id="alog-remember">Ingat folder ini, minggu depan tinggal 1 klik</button>` : ""}
+          <input type="file" id="alog-prepin" webkitdirectory multiple hidden>
+          <div class="pill" id="alog-src-info">Belum ada data</div>
+          <div class="pill" id="alog-bukti-info" hidden></div>
+          <details class="more"><summary>Pakai cara lain</summary>
+            <p>Paste kolom Tanggal + Kegiatan dari Excel/Google Sheets:</p>
+            <textarea id="alog-data" placeholder="Senin, 3 Agustus 2026&#9;Onboarding tim"></textarea>
+            <div class="tiles">
+              <button class="tile" id="alog-pickdir">${icon("folder", 22)}<b>Folder bukti</b></button>
+              <button class="tile" id="alog-pickfiles">${icon("image", 22)}<b>File bukti</b></button>
+            </div>
+            <input type="file" id="alog-dir" webkitdirectory multiple hidden>
+            <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg,.heic,.heif" hidden>
+            <p>Bukti: JPG/PNG (beberapa foto digabung otomatis) atau 1 PDF per tanggal. Foto iPhone (HEIC) ubah dulu ke JPG kalau error.</p>
+          </details>
         `)}
-        ${card(3, "paperclip", "Bukti aktivitas", "Pilih folder <code>bukti</code> (subfolder per tanggal) atau file yang namanya diawali tanggal.", `
-          <div class="tiles">
-            <button class="tile" id="alog-pickdir">${icon("folder", 26)}<b>Pilih folder</b><span>bukti/2026-08-11/foto.jpg</span></button>
-            <button class="tile" id="alog-pickfiles">${icon("image", 26)}<b>Pilih file</b><span>2026-08-11.jpg</span></button>
-          </div>
-          <input type="file" id="alog-dir" webkitdirectory multiple hidden>
-          <input type="file" id="alog-files" multiple accept=".pdf,.png,.jpg,.jpeg,.heic,.heif" hidden>
-          <div class="pill" id="alog-bukti-info">Belum ada bukti dipilih</div>
-          <p class="note">${icon("info", 15)}<span>Beberapa foto di satu tanggal otomatis digabung jadi 1 gambar. Format: JPG, PNG, atau 1 PDF. Foto iPhone (HEIC) dipakai kalau browser bisa membukanya; kalau tidak, ubah dulu ke JPG.</span></p>
-        `)}
-        ${card(4, "check", "Cek &amp; kirim", "Periksa dulu sebelum dikirim. Tanggal yang sudah ada di portal otomatis dilewati.", `
+        ${card(4, "check", "Cek &amp; kirim", "Tanggal yang sudah ada otomatis dilewati.", `
           <div id="alog-progress" class="progress" hidden><div id="alog-bar"></div></div>
-          <div id="alog-preview"><div class="empty">Klik <b>Cek data</b> untuk melihat log yang siap dikirim.</div></div>
+          <div id="alog-preview"><div class="empty">Pilih folder, lalu cek di sini.</div></div>
           <pre class="log" id="alog-log" hidden></pre>
         `)}
-        <p class="disclaimer">Tool tidak resmi. Isi log tetap tanggung jawabmu, tulis sesuai kegiatan asli.</p>
+        <p class="disclaimer">Tool tidak resmi. Tulis sesuai kegiatan asli ya.</p>
       </main>
       <footer class="ft">
-        <button class="btn" id="alog-cek">${icon("search")} Cek data</button>
-        <button class="btn primary" id="alog-kirim" disabled>${icon("send")} <span id="alog-kirim-label">Kirim</span></button>
+        <button class="btn primary block" id="alog-main"></button>
         <button class="btn danger" id="alog-stop" hidden>${icon("stop")} Stop</button>
       </footer>
     </aside>
   </div>`;
 
   const panel = $("#alog");
-  const state = { files: [], ready: [], stop: false, dateNote: "" };
+  const state = { files: [], ready: [], stop: false, dateNote: "", sheet: null, checked: false };
   const defaults = { jamMulai: "08:00", jamSelesai: "17:00", jenis: "3", tipe: "true", lokasi: "", dosen: [], data: "",
     tglMulai: "", tglSelesai: "", hari: [1, 2, 3, 4, 5] };
   let cfg = Object.assign({}, defaults, JSON.parse(localStorage.getItem(STORE) || "{}"));
@@ -450,7 +565,9 @@
     updatePrepInfo();
     const r = panel.querySelector(`input[name=alog-tipe][value="${cfg.tipe}"]`);
     if (r) r.checked = true;
-    panel.addEventListener("input", () => {
+    panel.addEventListener("input", (e) => {
+      // Mengetik/paste di kotak data = beralih dari file Excel ke data paste.
+      if (e.target.id === "alog-data") { state.sheet = null; showSource("Data dari paste", !!e.target.value.trim()); }
       cfg.jamMulai = $("#alog-mulai").value;
       cfg.jamSelesai = $("#alog-selesai").value;
       cfg.lokasi = $("#alog-lokasi").value;
@@ -464,7 +581,7 @@
       const boxes = [...panel.querySelectorAll("#alog-dosen input")];
       cfg.dosen = boxes.every((b) => b.checked) ? [] : boxes.filter((b) => b.checked).map((b) => b.value);
       save();
-      $("#alog-kirim").disabled = true; // data berubah: wajib cek ulang
+      needCheck(); // data berubah: wajib cek ulang
     });
   }
 
@@ -481,6 +598,30 @@
       const on = cfg.dosen.length === 0 || cfg.dosen.includes(nama);
       return `<label class="chip"><input type="checkbox" value="${esc(nama)}" ${on ? "checked" : ""}>${esc(n)}</label>`;
     }).join("") || `<span class="card-desc">Tidak ada dosen di form.</span>`;
+    copyPortalLabels(doc);
+  }
+
+  // Samakan label panel dengan label asli di form Tambah portal (teks portal dipakai apa adanya, tanpa disingkat).
+  function copyPortalLabels(doc) {
+    const form = $("#main_form", doc);
+    if (!form) return;
+    const clean = (t) => (t || "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+    for (const span of panel.querySelectorAll("[data-for]")) {
+      const n = span.dataset.for;
+      const field = form.querySelector(`[name="${n}"], [id="${n}"], [name^="${n}"]`);
+      if (!field) continue;
+      const label = (field.id && form.querySelector(`label[for="${field.id}"]:not(.form-check-label)`))
+        || field.closest(".form-group, .mb-3")?.querySelector("label:not(.form-check-label), .control-label, .form-label");
+      const text = clean(label?.textContent);
+      if (text && text.length <= 60) span.textContent = text;
+    }
+    // Pilihan tipe (Hybrid/Offline/Online) juga pakai teks portal.
+    for (const radio of form.querySelectorAll("input[type=radio][name=IsLuring]")) {
+      const own = (radio.id && form.querySelector(`label[for="${radio.id}"]`)) || radio.closest("label, .form-check");
+      const text = clean(own?.textContent);
+      const target = panel.querySelector(`input[name=alog-tipe][value="${radio.value}"] + span`);
+      if (text && target && text.length <= 30) target.textContent = text;
+    }
   }
 
   // ------------------------------------------------------------------ persiapan
@@ -683,21 +824,129 @@
 
   function setFiles(list) {
     state.files = [...list].filter((f) => /\.(pdf|png|jpe?g|heic|heif)$/i.test(f.name));
-    const dates = new Set(state.files.map((f) => dateOfPath(f.webkitRelativePath || f.name)).filter(Boolean));
+    const dates = new Set(state.files.map((f) => dateOfPath(pathOf(f))).filter(Boolean));
     const el = $("#alog-bukti-info");
+    el.hidden = false;
     el.className = "pill" + (state.files.length ? " ok" : "");
-    el.innerHTML = `${icon("check", 14)} ${state.files.length} file bukti untuk ${dates.size} tanggal`;
-    $("#alog-kirim").disabled = true;
+    el.innerHTML = `${icon(state.files.length ? "check" : "info", 14)} ${state.files.length} bukti untuk ${dates.size} tanggal`;
+    needCheck();
+  }
+
+  function showSource(text, ok) {
+    const el = $("#alog-src-info");
+    el.className = "pill" + (ok ? " ok" : "");
+    el.innerHTML = `${icon(ok ? "check" : "info", 14)} ${text}`;
+  }
+
+  // Satu folder persiapan = Excel (kegiatan) + bukti/. Dipanggil dari pemilih folder biasa maupun folder yang diingat.
+  async function loadFolder(list, folderName) {
+    const files = [...list];
+    const sheets = files.filter((f) => /\.(xlsx|csv)$/i.test(f.name) && !f.name.startsWith("~$") && !/(^|\/)bukti\//i.test(pathOf(f)));
+    sheets.sort((a, b) => /template-log-magang/i.test(b.name) - /template-log-magang/i.test(a.name) || b.lastModified - a.lastModified);
+    setFiles(files);
+    if (!sheets.length) {
+      state.sheet = null;
+      showSource(`Tidak ada file Excel di ${folderName || "folder ini"}`, false);
+      return;
+    }
+    try {
+      const rows = await readSheet(sheets[0]);
+      state.sheet = {name: sheets[0].name, rows};
+      const n = rows.filter((r) => String(r[1] || "").trim()).length;
+      showSource(`${n} kegiatan dari ${esc(sheets[0].name)}`, n > 0);
+    } catch (e) {
+      state.sheet = null;
+      showSource(esc(e.message), false);
+      return;
+    }
+    // Langsung cek kalau pengaturan sudah lengkap, supaya user tinggal klik Kirim.
+    if (cfg.jamMulai && cfg.jamSelesai && cfg.lokasi.trim()) await cek().catch((e) => alert(e.message));
+  }
+
+  // ---- Chrome/Edge: folder persiapan diingat (IndexedDB), minggu depan tinggal klik "Pakai folder terakhir".
+  const idb = () => new Promise((ok, err) => {
+    const r = indexedDB.open("logmager", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => err(r.error);
+  });
+  async function kv(key, value) {
+    const db = await idb();
+    return new Promise((ok, err) => {
+      const tx = db.transaction("kv", value === undefined ? "readonly" : "readwrite");
+      const req = value === undefined ? tx.objectStore("kv").get(key) : tx.objectStore("kv").put(value, key);
+      req.onsuccess = () => ok(req.result);
+      req.onerror = () => err(req.error);
+    });
+  }
+
+  async function filesFromHandle(dir, prefix = "") {
+    const out = [];
+    for await (const [name, h] of dir.entries()) {
+      if (h.kind === "directory") out.push(...(await filesFromHandle(h, `${prefix}${name}/`)));
+      else if (/\.(xlsx|csv|pdf|png|jpe?g|heic|heif)$/i.test(name)) {
+        const f = await h.getFile();
+        Object.defineProperty(f, "relPath", {value: `${prefix}${name}`});
+        out.push(f);
+      }
+    }
+    return out;
+  }
+
+  async function loadHandle(handle) {
+    let perm = await handle.queryPermission({mode: "read"});
+    if (perm !== "granted") perm = await handle.requestPermission({mode: "read"});
+    if (perm !== "granted") return showSource("Izin baca folder ditolak", false);
+    showSource(`Membaca ${esc(handle.name)}…`, false);
+    let files;
+    try {
+      files = await filesFromHandle(handle, `${handle.name}/`);
+    } catch {
+      return showSource("Folder tidak ditemukan (dipindah/dihapus?). Pilih ulang folder persiapan.", false);
+    }
+    await loadFolder(files, handle.name);
+  }
+
+  async function showLastFolder() {
+    if (!CAN_DIR) return;
+    const h = await kv("prepFolder").catch(() => null);
+    if (!h) return;
+    $("#alog-lastprep").hidden = false;
+    $("#alog-lastprep-label").textContent = `Pakai folder terakhir: ${h.name}`;
+  }
+
+  // Kosongkan dulu sebelum membuka: kalau tidak, memilih folder/file yang SAMA lagi tidak memicu "change"
+  // (gejalanya: pertama kali bisa, berikutnya tidak terbaca, padahal isi folder sudah ditambah).
+  function openPicker(sel) {
+    $(sel).value = "";
+    $(sel).click();
+  }
+
+  async function pickPrep() {
+    if (!CAN_DIR) return openPicker("#alog-prepin");
+    let handle;
+    const t0 = Date.now();
+    try {
+      handle = await window.showDirectoryPicker({id: "logmager-prep", mode: "read"});
+    } catch (e) {
+      // Ditolak dalam sekejap = bukan user yang membatalkan, tapi browser/OS yang memblokir fitur ini.
+      const blocked = e.name !== "AbortError" || Date.now() - t0 < 400;
+      if (blocked) showSource("Browser ini memblokir fitur ingat folder. Pakai tombol Pilih folder persiapan saja.", false);
+      return;
+    }
+    await kv("prepFolder", handle).catch(() => {});
+    showLastFolder();
+    await loadHandle(handle);
   }
 
   function collect() {
     const byDate = new Map();
     for (const f of state.files) {
-      const d = dateOfPath(f.webkitRelativePath || f.name);
+      const d = dateOfPath(pathOf(f));
       if (d) byDate.set(d, [...(byDate.get(d) || []), f]);
     }
     const entries = [], seen = new Set();
-    const rows = parseTSV(cfg.data);
+    const rows = state.sheet ? state.sheet.rows : parseTSV(cfg.data);
     const order = numericOrder(rows.map((r) => r[0] || ""));
     state.dateNote = rows.some((r) => NUM_DATE.test(String(r[0] || "").trim()))
       ? `Tanggal angka dibaca sebagai ${order === "mdy" ? "bulan/hari/tahun (format US)" : "hari/bulan/tahun"}.` : "";
@@ -733,11 +982,34 @@
     }</tbody></table></div>`;
   }
 
+  function setMain() {
+    const b = $("#alog-main");
+    b.disabled = false;
+    if (!state.checked) b.innerHTML = `${icon("search")} Cek data`;
+    else if (state.ready.length) b.innerHTML = `${icon("send")} Kirim ${state.ready.length} log`;
+    else b.innerHTML = `${icon("refresh")} Cek ulang`;
+  }
+
+  function needCheck() {
+    state.checked = false;
+    state.ready = [];
+    setMain();
+  }
+
   async function cek() {
-    if (!cfg.jamMulai || !cfg.jamSelesai || !cfg.lokasi.trim()) return alert("Lengkapi jam & lokasi di Pengaturan default dulu.");
+    if (!cfg.jamMulai || !cfg.jamSelesai || !cfg.lokasi.trim()) return alert("Lengkapi jam & lokasi di Pengaturan dulu.");
     // cfg.dosen kosong berarti "semua", jadi kalau semua centang dihapus jangan sampai terkirim ke semua dosen.
     const dosenBoxes = [...panel.querySelectorAll("#alog-dosen input")];
-    if (dosenBoxes.length && !dosenBoxes.some((b) => b.checked)) return alert("Pilih minimal satu dosen pembimbing di Pengaturan default.");
+    if (dosenBoxes.length && !dosenBoxes.some((b) => b.checked)) return alert("Pilih minimal satu dosen di Pengaturan.");
+    // Belum ada data (mis. halaman baru di-refresh setelah Kirim): pakai folder terakhir kalau ada, atau minta pilih folder.
+    if (!state.sheet && !cfg.data.trim()) {
+      const h = CAN_DIR && (await kv("prepFolder").catch(() => null));
+      if (h) return loadHandle(h); // loadFolder akan menjalankan cek lagi setelah data terbaca
+      $("#alog-preview").innerHTML = `<div class="empty">Belum ada data. Klik <b>Pilih folder persiapan</b> dulu,
+        atau paste data di <b>Pakai cara lain</b>.</div>`;
+      state.checked = false;
+      return setMain();
+    }
     const existing = datesFromDoc(await fetchDoc(location.href));
     const entries = collect();
     for (const e of entries) {
@@ -752,9 +1024,9 @@
     }
     state.ready = entries.filter((e) => e.status === "ok");
     renderPreview(entries);
-    $("#alog-kirim-label").textContent = state.ready.length ? `Kirim ${state.ready.length} log` : "Kirim";
-    $("#alog-kirim").disabled = !state.ready.length;
-    if (!entries.length) $("#alog-preview").innerHTML = `<div class="empty">Tidak ada baris valid. Pastikan kolom pertama berisi tanggal dan kolom kedua kegiatan.</div>`;
+    state.checked = true;
+    setMain();
+    if (!entries.length) $("#alog-preview").innerHTML = `<div class="empty">Tidak ada kegiatan terbaca. Cek kolom Tanggal &amp; Kegiatan di Excel, lalu simpan.</div>`;
   }
 
   async function kirim() {
@@ -763,7 +1035,8 @@
     state.stop = false;
     const log = $("#alog-log"), bar = $("#alog-bar");
     log.hidden = false; $("#alog-progress").hidden = false; log.textContent = ""; bar.style.width = "0";
-    for (const b of ["#alog-kirim", "#alog-cek"]) $(b).disabled = true;
+    $("#alog-main").disabled = true;
+    $("#alog-main").innerHTML = `${icon("send")} Mengirim…`;
     $("#alog-stop").hidden = false;
     let done = 0;
     let ok = 0;
@@ -792,12 +1065,25 @@
   $("#alog-x").onclick = () => panel.classList.remove("open");
   $("#alog-overlay").onclick = () => panel.classList.remove("open");
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") panel.classList.remove("open"); });
-  $("#alog-pickdir").onclick = () => $("#alog-dir").click();
-  $("#alog-pickfiles").onclick = () => $("#alog-files").click();
+  $("#alog-pickdir").onclick = () => openPicker("#alog-dir");
+  $("#alog-pickfiles").onclick = () => openPicker("#alog-files");
   $("#alog-dir").onchange = (e) => setFiles(e.target.files);
   $("#alog-files").onchange = (e) => setFiles(e.target.files);
-  $("#alog-cek").onclick = () => cek().catch((e) => alert(e.message));
-  $("#alog-kirim").onclick = () => kirim();
+  // Tombol utama pakai pemilih folder klasik: jalan di semua browser dan tidak terpengaruh kebijakan yang memblokir
+  // File System Access (mis. Chrome yang diatur ketat oleh OS/admin). "Ingat folder" jadi opsi tambahan.
+  $("#alog-pickprep").onclick = () => openPicker("#alog-prepin");
+  if (CAN_DIR) $("#alog-remember").onclick = () => pickPrep().catch((e) => showSource(esc(e.message), false));
+  $("#alog-prepin").onchange = (e) => { const f = e.target.files; loadFolder(f, f[0]?.webkitRelativePath.split("/")[0]); };
+  $("#alog-lastprep").onclick = async () => { const h = await kv("prepFolder").catch(() => null); if (h) await loadHandle(h).catch((e) => alert(e.message)); };
+  showLastFolder().then(async () => {
+    // Setelah Kirim halaman di-refresh. Kalau izin folder masih aktif, baca ulang otomatis tanpa bertanya.
+    const h = CAN_DIR && (await kv("prepFolder").catch(() => null));
+    if (h && (await h.queryPermission({mode: "read"}).catch(() => "")) === "granted") await loadHandle(h).catch(() => {});
+  });
+  if (cfg.data.trim()) showSource("Data dari paste", true);
+  // Satu tombol utama: "Cek data" dulu, lalu berubah jadi "Kirim N log". Tidak ada tombol abu-abu yang membingungkan.
+  $("#alog-main").onclick = () => (state.checked && state.ready.length ? kirim() : cek().catch((e) => alert(e.message)));
+  setMain();
   $("#alog-stop").onclick = () => { state.stop = true; };
   bindInputs();
   loadFormOptions().catch(() => { $("#alog-dosen").innerHTML = `<span class="err">Gagal memuat form. Refresh halaman.</span>`; });

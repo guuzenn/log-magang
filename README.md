@@ -69,43 +69,46 @@ Jangan pasang userscript dan extension bersamaan. Kalau terlanjur, panelnya teta
 
 ## Cara pakai panel
 
-Berlaku untuk Opsi 1 dan 2.
+Berlaku untuk Opsi 1 dan 2. Buka Student Portal → **Kemahasiswaan → Aktivitas → Log Aktivitas**, lalu klik tombol **Logmager** di kanan bawah.
 
-1. Buka Student Portal, lalu menu **Kemahasiswaan → Aktivitas → Log Aktivitas**. Tombol **⚡ Logmager** muncul di kanan bawah.
-2. Di panel yang terbuka:
-   0. **Persiapan (sekali di awal):** isi tanggal mulai, tanggal selesai, dan hari kerja. Logmager menyiapkan:
-      - Folder `bukti/` dengan subfolder untuk setiap hari kerja (`bukti/2026-07-13/` dan seterusnya).
-      - `template-log-magang.xlsx` dengan kolom *Tanggal* (bertipe tanggal) dan *Kegiatan*. Tanggalnya sudah terisi, tinggal tulis kegiatan tiap hari di Excel atau Google Sheets.
+**Sekali di awal magang**
+1. **Persiapan:** isi tanggal mulai, selesai, dan hari kerja, lalu klik **Buat folder persiapan**.
+   Pilih folder baru, misalnya `Documents\Magang` (Documents/Desktop/Downloads langsung tidak bisa dipilih Chrome).
+   Hasilnya `persiapan-log-magang-<tanggal>/` berisi `template-log-magang.xlsx` dan `bukti/<tanggal>/`.
+   Di Firefox, atau kalau gagal: pakai **Unduh .zip** lalu **Extract All**.
+2. **Pengaturan:** jam, jenis kegiatan, tipe, lokasi, dan dosen. Tersimpan otomatis.
 
-      Ada dua cara:
-      - **📁 Buat folder persiapan** (Chrome/Edge): pilih sebuah **subfolder**, lalu klik **Allow** saat browser minta izin.
-        Chrome tidak mengizinkan memilih folder Documents, Desktop, atau Downloads itu sendiri ("berisi file sistem"),
-        jadi buat dulu folder baru di dalamnya lewat tombol **New folder** di jendela pilih folder, misalnya `Documents\Magang`.
-        Semuanya langsung dibuat di `persiapan-log-magang-<tanggal mulai>/`. Aman diklik ulang: foto bukti dan template yang sudah diisi tidak ditimpa.
-        Kalau tetap gagal, Logmager otomatis menawarkan unduh .zip.
-      - **Unduh sebagai .zip** (semua browser, termasuk Firefox): klik kanan file ZIP, pilih **Extract All**, lalu taruh hasilnya di mana saja.
-        Pastikan benar-benar di-extract. Folder di dalam ZIP yang belum di-extract tidak bisa dipilih di langkah 3.
-   1. **Pengaturan default:** jam, jenis kegiatan, tipe, lokasi, dan dosen. Semuanya tersimpan otomatis di browser.
-   2. **Paste data:** blok kolom *Tanggal* dan *Kegiatan* di Excel/Google Sheets, Ctrl+C, lalu Ctrl+V.
-      Format tanggal yang dikenali antara lain `2026-08-11`, `11/08/2026`, `11 Agustus 2026`, dan format US `8/11/2026`
-      (terdeteksi otomatis kalau ada tanggal seperti `8/19/2026`). Baris yang tanggalnya tidak terbaca ditandai **Error**, tidak dilewati diam-diam.
-   3. **Pilih bukti:** pilih folder `bukti/` yang berisi subfolder per tanggal, atau file yang namanya diawali tanggal.
-      Format JPG, PNG, atau 1 PDF. Foto iPhone (HEIC) dipakai kalau browser bisa membukanya (mis. Safari);
-      di Chrome/Edge tanggal itu ditandai **Error**, jadi ubah dulu ke JPG atau setel iPhone ke *Settings → Camera → Formats → Most Compatible*.
-   4. **🔍 Cek data**, lalu **🚀 Kirim**.
-
-### Struktur folder bukti
-```
-bukti/
-├── 2026-08-11/
-│   ├── standup.jpg
-│   └── commit.png        <- beberapa foto otomatis digabung jadi 1 gambar
-├── 2026-08-12/
-│   └── laporan.pdf       <- 1 PDF dipakai apa adanya
-└── 2026-08-13.jpg        <- atau cukup file bernama tanggal
-```
+**Tiap minggu**
+1. Isi kolom **Kegiatan** di `template-log-magang.xlsx`, lalu **Save**. Taruh foto di `bukti/<tanggal>/`.
+2. Di panel, klik **Pilih folder persiapan** dan pilih folder tadi. Kalau browser bertanya "Upload … files?", klik **Upload**:
+   file hanya dibaca di browser, tidak dikirim ke mana-mana. Excel + bukti dibaca, lalu langsung dicek.
+   Opsional (Chrome/Edge): klik **Ingat folder ini** sekali, minggu depan cukup **Pakai folder terakhir**.
+3. Klik **Kirim**.
 
 Tanggal yang sudah ada di portal otomatis dilewati, jadi aman dipakai berkali-kali sambil mencicil.
+
+<details>
+<summary>Detail: format tanggal, bukti, dan cara lain</summary>
+
+- **Cara lain (Google Sheets / spreadsheet sendiri):** buka **Pakai cara lain** di panel, paste kolom *Tanggal* + *Kegiatan*,
+  lalu pilih folder `bukti/`. File `.csv` di folder persiapan juga bisa dibaca.
+- **Format tanggal:** `2026-08-11`, `11/08/2026`, `11 Agustus 2026`, kolom bertipe tanggal di Excel, dan format US `8/11/2026`
+  (terdeteksi otomatis kalau ada tanggal seperti `8/19/2026`). Tanggal yang tidak terbaca ditandai **Error**.
+- **Bukti:** JPG/PNG (beberapa foto otomatis digabung jadi 1 gambar) atau 1 PDF per tanggal. Foto iPhone (HEIC) kadang tidak bisa
+  dibuka Chrome; ubah ke JPG atau setel iPhone ke *Settings → Camera → Formats → Most Compatible*.
+
+```
+persiapan-log-magang-2026-08-03/
+├── template-log-magang.xlsx
+└── bukti/
+    ├── 2026-08-11/
+    │   ├── standup.jpg
+    │   └── commit.png      <- beberapa foto digabung jadi 1 gambar
+    ├── 2026-08-12/
+    │   └── laporan.pdf     <- 1 PDF dipakai apa adanya
+    └── 2026-08-13.jpg      <- atau cukup file bernama tanggal
+```
+</details>
 
 ---
 

@@ -1,6 +1,6 @@
 # Kebijakan Privasi Logmager
 
-*Berlaku untuk extension Chrome dan userscript Logmager. Terakhir diperbarui: 17 November 2026.*
+*Berlaku untuk extension Chrome dan userscript Logmager. Terakhir diperbarui: 19 November 2026.*
 
 Logmager adalah tool tidak resmi untuk mengisi Log Aktivitas Kampus Merdeka di Student Portal IPB.
 Tool ini tidak berafiliasi dengan IPB.
@@ -15,6 +15,8 @@ Tool ini tidak berafiliasi dengan IPB.
 |---|---|---|
 | Pengaturan default (jam, jenis kegiatan, tipe, lokasi, dosen, tanggal magang, hari kerja) dan data kegiatan yang kamu paste | `localStorage` browser kamu, hanya untuk situs Student Portal | Supaya tidak perlu diisi ulang |
 | File bukti (foto/PDF) yang kamu pilih | Tidak disimpan. Dibaca di browser saat kamu menekan **Kirim** | Diunggah sebagai bukti ke Student Portal, sama seperti upload manual |
+| File spreadsheet (`.xlsx`/`.csv`) di folder persiapan | Tidak disimpan. Dibaca di browser saat kamu memilih folder | Mengambil kolom Tanggal dan Kegiatan |
+| Referensi folder persiapan terakhir (Chrome/Edge, fitur "Pakai folder terakhir") | IndexedDB browser kamu, hanya untuk situs Student Portal. Yang disimpan hanya penunjuk ke folder, bukan isinya; browser tetap meminta izin setiap kali dibuka | Supaya minggu depan tidak perlu memilih folder lagi |
 | Isi tabel log di Student Portal | Tidak disimpan | Mengecek tanggal yang sudah terisi supaya tidak dobel |
 
 Semua data dikirim **hanya** ke `studentportal.ipb.ac.id`, lewat formulir yang sama dengan yang kamu isi secara manual.
