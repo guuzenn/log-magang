@@ -8,7 +8,7 @@ Isi puluhan Log Aktivitas Kampus Merdeka/magang di Student Portal IPB sekaligus 
 input satu per satu. Jam, jenis kegiatan, dosen, tipe, dan lokasi diisi sekali. Setelah itu kamu cukup
 paste **tanggal + kegiatan** dari spreadsheet dan memilih **folder bukti**.
 
-https://github.com/user-attachments/assets/19b47dcc-0a72-4c04-8238-379d7d530492
+https://github.com/user-attachments/assets/40432ff5-5cde-4f5c-9bbf-081febb8192a
 
 **[➜ Pasang dari Chrome Web Store](https://chromewebstore.google.com/detail/gjhmgccpfhjdnomfgmpolaokeohbolgm)** · gratis · Chrome & Edge
 
